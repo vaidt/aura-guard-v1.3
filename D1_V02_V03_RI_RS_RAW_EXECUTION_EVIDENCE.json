@@ -1,0 +1,60 @@
+{
+  "evidence_type": "D1_RI_RS_RAW_EXECUTION",
+  "mode": "READ_ONLY_EVIDENCE_ACQUISITION",
+  "environment": {
+    "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
+    "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+    "toolchain": "stable-x86_64-unknown-linux-gnu (default)",
+    "os": "Linux runnervmlun5p 6.17.0-1022-azure #22-Ubuntu SMP Mon Jul 27 17:24:03 UTC 2026 x86_64 x86_64 x86_64 GNU/Linux",
+    "repository": "/home/runner/work/aura-guard-v1.3/aura-guard-v1.3",
+    "git_head": "35082d7b4880dad780fb55a1a5f3ac0ef4322674",
+    "git_status_short": "?? D1_V02_V03_RI_RS_RAW_EXECUTION.log"
+  },
+  "dependency": {
+    "crate": "serde_json_canonicalizer",
+    "required_version": "0.3.2",
+    "resolved_version": "0.3.2",
+    "verification_command": "cargo tree | grep serde_json_canonicalizer",
+    "verification_output": "├── serde_json_canonicalizer v0.3.2",
+    "status": "VERIFIED"
+  },
+  "vectors": {
+    "D1-V02": {
+      "status": "EXECUTION_NOT_AVAILABLE",
+      "input": "{\"é\":1,\"z\":2,\"😀\":3,\"ﬀ\":4}",
+      "input_sha256": "bab5b288c44fe005acb0d0e4818374014211f42ebb827d7c1ad3fa5d4c86e3f2",
+      "error": "failed to parse Rust output JSON: Expecting value: line 1 column 1 (char 0)"
+    },
+    "D1-V03": {
+      "status": "EXECUTION_NOT_AVAILABLE",
+      "input": "{\"a\":-0.0}",
+      "input_sha256": "952b7dc455870c265da6a6fb15ef60891abf562f0e3327f095914610b3d00811",
+      "error": "failed to parse Rust output JSON: Expecting value: line 1 column 1 (char 0)"
+    }
+  },
+  "preservation": {
+    "governance_changes": "NONE",
+    "implementation_authorization": "NOT GRANTED",
+    "normative_effect": "NONE",
+    "governance_state_preserved": {
+      "M1": "OPEN / BLOCKED",
+      "G0": "OPEN / BLOCKED",
+      "P-001": "PROPOSED / NOT RATIFIED",
+      "P-002": "PROPOSED / NOT RATIFIED",
+      "P-003": "PROPOSED / NOT RATIFIED",
+      "P-008": "PROPOSED / NOT RATIFIED",
+      "DQ-003": "OPEN",
+      "DQ-006": "OPEN"
+    }
+  },
+  "execution_notes": {
+    "as_is_vs_result": "RESULT fields report only actually observed RI-RS execution outputs.",
+    "boundaries": [
+      "AS-IS / SPECIFICATION / TO-BE / RESULT are not interchangeable.",
+      "EXISTS ≠ REACHABLE ≠ CURRENT ≠ AUTHORITATIVE ≠ NORMATIVE ≠ EFFECTIVE.",
+      "EXHAUSTED ≠ RESOLVED."
+    ],
+    "cross_language_agreement_initial_state": "NOT ESTABLISHED",
+    "d1_phase_2_initial_state": "PARTIAL"
+  }
+}
