@@ -214,3 +214,140 @@ error: could not compile `d1-ri-rs-harness` (bin "d1-ri-rs-harness") due to 1 pr
 
 $ sha256sum /home/runner/work/aura-guard-v1.3/aura-guard-v1.3/D1_V02_V03_RI_RS_RAW_EXECUTION_EVIDENCE.json
 703a1d107a1347b7a5268776b60896508cfeb7a1f9ad34014fe15ab5c4a0f84c  /home/runner/work/aura-guard-v1.3/aura-guard-v1.3/D1_V02_V03_RI_RS_RAW_EXECUTION_EVIDENCE.json
+
+# Retry after initial harness compile failure
+UTC timestamp: 2026-09-22T04:50:49Z
+$ cat /tmp/aura_d1_phase2_ri_rs/harness/src/main.rs
+use serde::Serialize;
+use serde_json::Value;
+use sha2::{Digest, Sha256};
+
+#[derive(Serialize)]
+struct VectorSuccess {
+    status: &'static str,
+    input: String,
+    input_sha256: String,
+    canonical_bytes_len: usize,
+    canonical_bytes_utf8: String,
+    canonical_bytes_hex: String,
+    sha256_canonical_bytes: String,
+    leaf_preimage_hex: String,
+    leaf_preimage_len: usize,
+    leaf_sha256: String,
+}
+
+#[derive(Serialize)]
+struct VectorFailure {
+    status: &'static str,
+    input: String,
+    input_sha256: String,
+    error: String,
+}
+
+#[derive(Serialize)]
+#[serde(untagged)]
+enum VectorResult {
+    Success(VectorSuccess),
+    Failure(VectorFailure),
+}
+
+#[derive(Serialize)]
+struct Output {
+    d1_v02: VectorResult,
+    d1_v03: VectorResult,
+}
+
+fn hex(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut out = String::with_capacity(bytes.len() * 2);
+    for &b in bytes {
+        out.push(HEX[(b >> 4) as usize] as char);
+        out.push(HEX[(b & 0x0f) as usize] as char);
+    }
+    out
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    let digest = Sha256::digest(bytes);
+    hex(&digest)
+}
+
+fn execute(input: &str) -> VectorResult {
+    let input_sha256 = sha256_hex(input.as_bytes());
+    let parsed: Value = match serde_json::from_str(input) {
+        Ok(v) => v,
+        Err(e) => {
+            return VectorResult::Failure(VectorFailure {
+                status: "EXECUTION_NOT_AVAILABLE",
+                input: input.to_owned(),
+                input_sha256,
+                error: format!("serde_json parse error: {e}"),
+            })
+        }
+    };
+    let canonical = match serde_json_canonicalizer::to_string(&parsed) {
+        Ok(v) => v,
+        Err(e) => {
+            return VectorResult::Failure(VectorFailure {
+                status: "EXECUTION_NOT_AVAILABLE",
+                input: input.to_owned(),
+                input_sha256,
+                error: format!("canonicalization error: {e}"),
+            })
+        }
+    };
+    let canonical_bytes = canonical.as_bytes().to_vec();
+    let mut leaf_preimage = Vec::with_capacity(canonical_bytes.len() + 1);
+    leaf_preimage.push(0x00);
+    leaf_preimage.extend_from_slice(&canonical_bytes);
+    VectorResult::Success(VectorSuccess {
+        status: "EXECUTED",
+        input: input.to_owned(),
+        input_sha256,
+        canonical_bytes_len: canonical_bytes.len(),
+        canonical_bytes_utf8: canonical,
+        canonical_bytes_hex: hex(&canonical_bytes),
+        sha256_canonical_bytes: sha256_hex(&canonical_bytes),
+        leaf_preimage_hex: hex(&leaf_preimage),
+        leaf_preimage_len: leaf_preimage.len(),
+        leaf_sha256: sha256_hex(&leaf_preimage),
+    })
+}
+
+fn main() {
+    let output = Output {
+        d1_v02: execute(r#"{"é":1,"z":2,"😀":3,"ﬀ":4}"#),
+        d1_v03: execute(r#"{"a":-0.0}"#),
+    };
+    println!("{}", serde_json::to_string_pretty(&output).unwrap());
+}
+
+$ cd '/tmp/aura_d1_phase2_ri_rs/harness' && cargo run --quiet > '/tmp/aura_d1_phase2_ri_rs/run_output.json' && cat '/tmp/aura_d1_phase2_ri_rs/run_output.json'
+{
+  "d1_v02": {
+    "status": "EXECUTED",
+    "input": "{\"é\":1,\"z\":2,\"😀\":3,\"ﬀ\":4}",
+    "input_sha256": "bab5b288c44fe005acb0d0e4818374014211f42ebb827d7c1ad3fa5d4c86e3f2",
+    "canonical_bytes_len": 31,
+    "canonical_bytes_utf8": "{\"z\":2,\"é\":1,\"😀\":3,\"ﬀ\":4}",
+    "canonical_bytes_hex": "7b227a223a322c22c3a9223a312c22f09f9880223a332c22efac80223a347d",
+    "sha256_canonical_bytes": "25923e60a4925e624410384f0acd91615434406b590cdf2782c86adf3230bc4d",
+    "leaf_preimage_hex": "007b227a223a322c22c3a9223a312c22f09f9880223a332c22efac80223a347d",
+    "leaf_preimage_len": 32,
+    "leaf_sha256": "aceeb8e4c88a30d4cd35d12da58e3023a63bb13b11c0ef266b8d743f2236cc4f"
+  },
+  "d1_v03": {
+    "status": "EXECUTED",
+    "input": "{\"a\":-0.0}",
+    "input_sha256": "952b7dc455870c265da6a6fb15ef60891abf562f0e3327f095914610b3d00811",
+    "canonical_bytes_len": 7,
+    "canonical_bytes_utf8": "{\"a\":0}",
+    "canonical_bytes_hex": "7b2261223a307d",
+    "sha256_canonical_bytes": "45b619e97b5d9b029af4522e9ffb02fa99ff2bf226c82ee22a7cc10269a557e8",
+    "leaf_preimage_hex": "007b2261223a307d",
+    "leaf_preimage_len": 8,
+    "leaf_sha256": "94f89ffdde40b0f7deace6ae4b5f614641e970da2cff10639b159f7749e87dd6"
+  }
+}
+[exit: 0]
+34c79788e92650b73f473ead5abb61e89ab02f99c3589c12554f12cd965c9a1a  /home/runner/work/aura-guard-v1.3/aura-guard-v1.3/D1_V02_V03_RI_RS_RAW_EXECUTION_EVIDENCE.json
