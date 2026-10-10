@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - "experiment/l2-1-b-corpus-run"
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: read
