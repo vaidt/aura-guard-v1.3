@@ -1,0 +1,404 @@
+{
+  "artifact_id": "L2_1_B_DISCRIMINATING_CORPUS",
+  "stage": "L2.1-B",
+  "mode": "READ_ONLY / EXPERIMENTAL / NON-NORMATIVE",
+  "provenance": {
+    "status": "RECONSTRUCTED_NOT_PRIMARY",
+    "source": "/mnt/data/l2_work/L2.1-B_EXECUTION_REPORT.json (17 recorded rows)",
+    "note": "The named original L2_1_B_discriminating_corpus.json was not found among available uploads or at the inspected repository paths. This artifact reconstructs raw JSON/test inputs and prior result references from the 17-row execution report. It is not claimed byte-identical to the missing original corpus.",
+    "created_for": "Isolated RI-RS adapter execution only; no production code path changes."
+  },
+  "protocol_boundary": {
+    "adapter_path": "conformance/canonical/jcs.rs",
+    "parser": "serde_json::from_str::<serde_json::Value>",
+    "canonicalizer": "serde_json_canonicalizer::to_vec(value)",
+    "distinction": "Parser rejection, canonicalizer rejection, and acceptance by JCS are recorded separately. An accepted JCS serialization is not automatically protocol-conformant."
+  },
+  "vectors": [
+    {
+      "id": "C-001",
+      "class": "C",
+      "raw_json": "{\"a\":1,\"b\":2}",
+      "protocol_expectation": "ACCEPT",
+      "expectation_notes": null,
+      "reference_results_from_prior_l2_1_b_report": {
+        "vnext": {
+          "status": "PASS",
+          "canonical": "{\"a\":1,\"b\":2}",
+          "sha256": "43258cff783fe7036d8a43033f830adfc60ec037382473548ac742b888292777"
+        },
+        "legacy_ri_py": {
+          "status": "PASS",
+          "canonical": "{\"a\":1,\"b\":2}",
+          "sha256": "43258cff783fe7036d8a43033f830adfc60ec037382473548ac742b888292777"
+        },
+        "node_guard": {
+          "status": "PASS",
+          "canonical": "{\"a\":1,\"b\":2}",
+          "sha256": "43258cff783fe7036d8a43033f830adfc60ec037382473548ac742b888292777"
+        }
+      }
+    },
+    {
+      "id": "C-002",
+      "class": "C",
+      "raw_json": "{\"\":1,\"𝌆\":2}",
+      "protocol_expectation": "ACCEPT",
+      "expectation_notes": null,
+      "reference_results_from_prior_l2_1_b_report": {
+        "vnext": {
+          "status": "PASS",
+          "canonical": "{\"𝌆\":2,\"\":1}",
+          "sha256": "bf796081b4d7f6cd4a08000ef04116ecbdad09cfe34989717b34ef876242797a"
+        },
+        "legacy_ri_py": {
+          "status": "PASS",
+          "canonical": "{\"\":1,\"𝌆\":2}",
+          "sha256": "fe5ec9f6e1fc0a417f9c67e494c57c1880f90d4efc78c4c3f386e1e0d1cc1b2b"
+        },
+        "node_guard": {
+          "status": "PASS",
+          "canonical": "{\"𝌆\":2,\"\":1}",
+          "sha256": "bf796081b4d7f6cd4a08000ef04116ecbdad09cfe34989717b34ef876242797a"
+        }
+      }
+    },
+    {
+      "id": "C-003",
+      "class": "C",
+      "raw_json": "{\"text\":\"é𝄞\"}",
+      "protocol_expectation": "ACCEPT",
+      "expectation_notes": null,
+      "reference_results_from_prior_l2_1_b_report": {
+        "vnext": {
+          "status": "PASS",
+          "canonical": "{\"text\":\"é𝄞\"}",
+          "sha256": "6d040746e0903ecb1b41aa1133e02d4874a33675f4a6cb522567767e7d9cc782"
+        },
+        "legacy_ri_py": {
+          "status": "PASS",
+          "canonical": "{\"text\":\"\\u00e9\\ud834\\udd1e\"}",
+          "sha256": "713d0d19ebdb6cdde3ec46a22cff8965537820b99240753be16d0e80e4ffa408"
+        },
+        "node_guard": {
+          "status": "PASS",
+          "canonical": "{\"text\":\"é𝄞\"}",
+          "sha256": "6d040746e0903ecb1b41aa1133e02d4874a33675f4a6cb522567767e7d9cc782"
+        }
+      }
+    },
+    {
+      "id": "C-004",
+      "class": "C",
+      "raw_json": "{\"text\":\"\\\"\\\\\\n\\t\"}",
+      "protocol_expectation": "ACCEPT",
+      "expectation_notes": null,
+      "reference_results_from_prior_l2_1_b_report": {
+        "vnext": {
+          "status": "PASS",
+          "canonical": "{\"text\":\"\\\"\\\\\\n\\t\"}",
+          "sha256": "ebd11d262b90bf444beb6544bc613909ac67239f02885eacb39277032d3a65ce"
+        },
+        "legacy_ri_py": {
+          "status": "PASS",
+          "canonical": "{\"text\":\"\\\"\\\\\\n\\t\"}",
+          "sha256": "ebd11d262b90bf444beb6544bc613909ac67239f02885eacb39277032d3a65ce"
+        },
+        "node_guard": {
+          "status": "PASS",
+          "canonical": "{\"text\":\"\\\"\\\\\\n\\t\"}",
+          "sha256": "ebd11d262b90bf444beb6544bc613909ac67239f02885eacb39277032d3a65ce"
+        }
+      }
+    },
+    {
+      "id": "C-005",
+      "class": "C",
+      "raw_json": "{\"z\":{\"b\":2,\"a\":1},\"a\":[3,2,1]}",
+      "protocol_expectation": "ACCEPT",
+      "expectation_notes": null,
+      "reference_results_from_prior_l2_1_b_report": {
+        "vnext": {
+          "status": "PASS",
+          "canonical": "{\"a\":[3,2,1],\"z\":{\"a\":1,\"b\":2}}",
+          "sha256": "f613a572f53e0e577f557af7e41633d7c30546ae97e1e20b8ad0dbea7118d7a6"
+        },
+        "legacy_ri_py": {
+          "status": "PASS",
+          "canonical": "{\"a\":[3,2,1],\"z\":{\"a\":1,\"b\":2}}",
+          "sha256": "f613a572f53e0e577f557af7e41633d7c30546ae97e1e20b8ad0dbea7118d7a6"
+        },
+        "node_guard": {
+          "status": "PASS",
+          "canonical": "{\"a\":[3,2,1],\"z\":{\"a\":1,\"b\":2}}",
+          "sha256": "f613a572f53e0e577f557af7e41633d7c30546ae97e1e20b8ad0dbea7118d7a6"
+        }
+      }
+    },
+    {
+      "id": "C-006",
+      "class": "C",
+      "raw_json": "{\"\":1}",
+      "protocol_expectation": "ACCEPT",
+      "expectation_notes": null,
+      "reference_results_from_prior_l2_1_b_report": {
+        "vnext": {
+          "status": "PASS",
+          "canonical": "{\"\":1}",
+          "sha256": "f3d86de1bf4b354382f91a12a4487daaeb56692b2c46f2df52f6f83a84610074"
+        },
+        "legacy_ri_py": {
+          "status": "PASS",
+          "canonical": "{\"\":1}",
+          "sha256": "f3d86de1bf4b354382f91a12a4487daaeb56692b2c46f2df52f6f83a84610074"
+        },
+        "node_guard": {
+          "status": "PASS",
+          "canonical": "{\"\":1}",
+          "sha256": "f3d86de1bf4b354382f91a12a4487daaeb56692b2c46f2df52f6f83a84610074"
+        }
+      }
+    },
+    {
+      "id": "D-001",
+      "class": "D",
+      "raw_json": "-0.0",
+      "protocol_expectation": "REJECT",
+      "expectation_notes": "Floating-point input forbidden by AURA-CANON/1",
+      "reference_results_from_prior_l2_1_b_report": {
+        "vnext": {
+          "status": "REJECT"
+        },
+        "legacy_ri_py": {
+          "status": "PASS",
+          "canonical": "-0.0",
+          "sha256": "c26617c7ccbcaa6631b45d851b8cf56e21d2ca624bdb1193afdbd4b560702cec"
+        },
+        "node_guard": {
+          "status": "PASS",
+          "canonical": "0",
+          "sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+        }
+      }
+    },
+    {
+      "id": "D-002",
+      "class": "D",
+      "raw_json": "0.1",
+      "protocol_expectation": "REJECT",
+      "expectation_notes": "Floating-point input forbidden by AURA-CANON/1",
+      "reference_results_from_prior_l2_1_b_report": {
+        "vnext": {
+          "status": "REJECT"
+        },
+        "legacy_ri_py": {
+          "status": "PASS",
+          "canonical": "0.1",
+          "sha256": "14be4b45f18e0d8c67b4f719b5144eee88497e413709d11d85b096d8e2346310"
+        },
+        "node_guard": {
+          "status": "PASS",
+          "canonical": "0.1",
+          "sha256": "14be4b45f18e0d8c67b4f719b5144eee88497e413709d11d85b096d8e2346310"
+        }
+      }
+    },
+    {
+      "id": "D-003",
+      "class": "D",
+      "raw_json": "nan",
+      "protocol_expectation": "REJECT",
+      "expectation_notes": "Non-finite token is not valid JSON; record parser boundary",
+      "reference_results_from_prior_l2_1_b_report": {
+        "vnext": {
+          "status": "REJECT"
+        },
+        "legacy_ri_py": {
+          "status": "PASS",
+          "canonical": "NaN",
+          "sha256": "d5b592c05dc25b5032553f1b27f4139be95e881f73db33b02b05ab20c3f9981e"
+        },
+        "node_guard": {
+          "status": "REJECT"
+        }
+      }
+    },
+    {
+      "id": "D-004",
+      "class": "D",
+      "raw_json": "inf",
+      "protocol_expectation": "REJECT",
+      "expectation_notes": "Non-finite token is not valid JSON; record parser boundary",
+      "reference_results_from_prior_l2_1_b_report": {
+        "vnext": {
+          "status": "REJECT"
+        },
+        "legacy_ri_py": {
+          "status": "PASS",
+          "canonical": "Infinity",
+          "sha256": "d0067cad9a63e0813759a2bb841051ca73570c0da2e08e840a8eb45db6a7a010"
+        },
+        "node_guard": {
+          "status": "REJECT"
+        }
+      }
+    },
+    {
+      "id": "D-005",
+      "class": "D",
+      "raw_json": "-inf",
+      "protocol_expectation": "REJECT",
+      "expectation_notes": "Non-finite token is not valid JSON; record parser boundary",
+      "reference_results_from_prior_l2_1_b_report": {
+        "vnext": {
+          "status": "REJECT"
+        },
+        "legacy_ri_py": {
+          "status": "PASS",
+          "canonical": "-Infinity",
+          "sha256": "c64ddf11bcd45660f0cf66dd0c22d2b4570ef3d3fc6527a9a6f6c722aefa3c39"
+        },
+        "node_guard": {
+          "status": "REJECT"
+        }
+      }
+    },
+    {
+      "id": "D-006",
+      "class": "D",
+      "raw_json": "1e+21",
+      "protocol_expectation": "REJECT",
+      "expectation_notes": "Floating-point/exponent input forbidden by AURA-CANON/1",
+      "reference_results_from_prior_l2_1_b_report": {
+        "vnext": {
+          "status": "REJECT"
+        },
+        "legacy_ri_py": {
+          "status": "PASS",
+          "canonical": "1e+21",
+          "sha256": "241c4643fa70b1dcde1205b71be4e3bebb17e9f880c8e1a33d0ead6c27271d3c"
+        },
+        "node_guard": {
+          "status": "PASS",
+          "canonical": "1e+21",
+          "sha256": "241c4643fa70b1dcde1205b71be4e3bebb17e9f880c8e1a33d0ead6c27271d3c"
+        }
+      }
+    },
+    {
+      "id": "D-007",
+      "class": "D",
+      "raw_json": "{\"s\":\"\\ud800\"}",
+      "protocol_expectation": "REJECT",
+      "expectation_notes": "Lone surrogate has no Unicode scalar value / UTF-8 representation",
+      "reference_results_from_prior_l2_1_b_report": {
+        "vnext": {
+          "status": "REJECT"
+        },
+        "legacy_ri_py": {
+          "status": "PASS",
+          "canonical": "{\"s\":\"\\ud800\"}",
+          "sha256": "d06a70a1ca4d3ac4099cd5f35ecbb551be652247e0950c05790e8f0c58010851"
+        },
+        "node_guard": {
+          "status": "PASS",
+          "canonical": "{\"s\":\"\\ud800\"}"
+        }
+      }
+    },
+    {
+      "id": "D-008",
+      "class": "D",
+      "raw_json": "{\"a\":1}",
+      "protocol_expectation": "ACCEPT",
+      "expectation_notes": null,
+      "reference_results_from_prior_l2_1_b_report": {
+        "vnext": {
+          "status": "PASS",
+          "canonical": "{\"a\":1}",
+          "sha256": "015abd7f5cc57a2dd94b7590f04ad8084273905ee33ec5cebeae62276a97f862"
+        },
+        "legacy_ri_py": {
+          "status": "PASS",
+          "canonical": "{\"a\":1}",
+          "sha256": "015abd7f5cc57a2dd94b7590f04ad8084273905ee33ec5cebeae62276a97f862"
+        },
+        "node_guard": {
+          "status": "PASS",
+          "canonical": "{\"a\":1}",
+          "sha256": "015abd7f5cc57a2dd94b7590f04ad8084273905ee33ec5cebeae62276a97f862"
+        }
+      }
+    },
+    {
+      "id": "D-009",
+      "class": "D",
+      "raw_json": "{\"a\":1,\"b\":null}",
+      "protocol_expectation": "REJECT",
+      "expectation_notes": "Null forbidden by AURA-CANON/1",
+      "reference_results_from_prior_l2_1_b_report": {
+        "vnext": {
+          "status": "REJECT"
+        },
+        "legacy_ri_py": {
+          "status": "PASS",
+          "canonical": "{\"a\":1,\"b\":null}",
+          "sha256": "46e0ff59f6164548317489fbea1133a48f7a83c325c3535e44559c9619afb76b"
+        },
+        "node_guard": {
+          "status": "PASS",
+          "canonical": "{\"a\":1,\"b\":null}",
+          "sha256": "46e0ff59f6164548317489fbea1133a48f7a83c325c3535e44559c9619afb76b"
+        }
+      }
+    },
+    {
+      "id": "D-010",
+      "class": "D",
+      "raw_json": "{\"timestamp\":\"2026-10-06T16:00:00Z\"}",
+      "protocol_expectation": "ACCEPT_BYTES_SEMANTICS_UNRESOLVED",
+      "expectation_notes": "Timestamp semantics/normalization unresolved; byte-path result only",
+      "reference_results_from_prior_l2_1_b_report": {
+        "vnext": {
+          "status": "PASS",
+          "canonical": "{\"timestamp\":\"2026-10-06T16:00:00Z\"}",
+          "sha256": "76570fe151b5eac3127015553902c56e7a77cb7366172fb189adf930c66b2081"
+        },
+        "legacy_ri_py": {
+          "status": "PASS",
+          "canonical": "{\"timestamp\":\"2026-10-06T16:00:00Z\"}",
+          "sha256": "76570fe151b5eac3127015553902c56e7a77cb7366172fb189adf930c66b2081"
+        },
+        "node_guard": {
+          "status": "PASS",
+          "canonical": "{\"timestamp\":\"2026-10-06T16:00:00Z\"}",
+          "sha256": "76570fe151b5eac3127015553902c56e7a77cb7366172fb189adf930c66b2081"
+        }
+      }
+    },
+    {
+      "id": "D-011",
+      "class": "D",
+      "raw_json": "{\"timestamp\":\"2026-10-06T18:00:00+02:00\"}",
+      "protocol_expectation": "ACCEPT_BYTES_SEMANTICS_UNRESOLVED",
+      "expectation_notes": "Timestamp semantics/normalization unresolved; byte-path result only",
+      "reference_results_from_prior_l2_1_b_report": {
+        "vnext": {
+          "status": "PASS",
+          "canonical": "{\"timestamp\":\"2026-10-06T18:00:00+02:00\"}",
+          "sha256": "19ffcba71b5510a122bc3a7186580f3adcb16c68465d0b1b6e90a47cc0187e38"
+        },
+        "legacy_ri_py": {
+          "status": "PASS",
+          "canonical": "{\"timestamp\":\"2026-10-06T18:00:00+02:00\"}",
+          "sha256": "19ffcba71b5510a122bc3a7186580f3adcb16c68465d0b1b6e90a47cc0187e38"
+        },
+        "node_guard": {
+          "status": "PASS",
+          "canonical": "{\"timestamp\":\"2026-10-06T18:00:00+02:00\"}",
+          "sha256": "19ffcba71b5510a122bc3a7186580f3adcb16c68465d0b1b6e90a47cc0187e38"
+        }
+      }
+    }
+  ]
+}
