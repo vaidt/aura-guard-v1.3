@@ -53,7 +53,7 @@
         },
         "legacy_ri_py": {
           "status": "PASS",
-          "canonical": "{\"\":1,\"𝌆\":2}",
+          "canonical": "{\"\\ue000\":1,\"\\ud834\\udf06\":2}",
           "sha256": "fe5ec9f6e1fc0a417f9c67e494c57c1880f90d4efc78c4c3f386e1e0d1cc1b2b"
         },
         "node_guard": {
