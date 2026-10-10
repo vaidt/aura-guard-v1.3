@@ -126,6 +126,12 @@ serde_json_canonicalizer = "=0.3.2"
 name = "canonical_001"
 path = "conformance/canonical/canonical_001.rs"
 
+
+# L2.1-B experimental discriminating corpus harness (isolated branch only).
+[[test]]
+name = "l2_1_b_corpus"
+path = "conformance/canonical/l2_1_b_corpus.rs"
+
 [lints.rust]
 unsafe_code = "forbid"
 missing_docs = "warn"
