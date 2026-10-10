@@ -1,0 +1,56 @@
+name: L2.1-B RI-RS discriminating corpus (experimental)
+
+on:
+  push:
+    branches:
+      - "experiment/l2-1-b-corpus-run"
+
+permissions:
+  contents: read
+
+jobs:
+  ri-rs-discriminating-corpus:
+    name: Execute 17-vector corpus through CANONICAL-001 adapter
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout experimental snapshot
+        uses: actions/checkout@v4
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@1.86.0
+
+      - name: Capture environment and dependency provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "RUSTC_VERSION=$(rustc --version)" | tee L2_1_B_RUST_TOOLCHAIN.txt >> "$GITHUB_ENV"
+          echo "CARGO_VERSION=$(cargo --version)" | tee -a L2_1_B_RUST_TOOLCHAIN.txt >> "$GITHUB_ENV"
+          echo "GIT_SHA=$(git rev-parse HEAD)" | tee -a L2_1_B_RUST_TOOLCHAIN.txt
+          echo "BRANCH=$(git branch --show-current)" | tee -a L2_1_B_RUST_TOOLCHAIN.txt
+          sha256sum conformance/canonical/L2_1_B_discriminating_corpus.json Cargo.lock | tee L2_1_B_SOURCE_SHA256SUMS.txt
+          cargo tree --locked | tee L2_1_B_CARGO_TREE.txt
+          grep -F 'serde_json_canonicalizer v0.3.2' L2_1_B_CARGO_TREE.txt
+
+      - name: Run all 17 vectors through the existing adapter
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --test l2_1_b_corpus -- --nocapture 2>&1 | tee L2_1_B_RI_RS_RAW_EXECUTION.log
+          test -s L2_1_B_RI_RS_EXECUTION_RESULTS.json
+          sha256sum L2_1_B_RI_RS_EXECUTION_RESULTS.json | tee -a L2_1_B_SOURCE_SHA256SUMS.txt
+
+      - name: Upload immutable run evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: l2-1-b-ri-rs-corpus-${{ github.sha }}
+          if-no-files-found: warn
+          path: |
+            L2_1_B_RI_RS_EXECUTION_RESULTS.json
+            L2_1_B_RI_RS_RAW_EXECUTION.log
+            L2_1_B_RUST_TOOLCHAIN.txt
+            L2_1_B_CARGO_TREE.txt
+            L2_1_B_SOURCE_SHA256SUMS.txt
+            conformance/canonical/L2_1_B_discriminating_corpus.json
+            Cargo.lock
