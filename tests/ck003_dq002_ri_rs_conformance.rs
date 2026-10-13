@@ -8,7 +8,10 @@ use aura_guard::merkle::{leaf_hash, node_hash};
 fn decode_hex(s: &str) -> Result<[u8; 32], Box<dyn Error>> {
     let bytes = hex::decode(s)?;
     let digest = bytes.try_into().map_err(|_| {
-        io::Error::new(io::ErrorKind::InvalidData, "fixture digest must be 32 bytes")
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            "fixture digest must be 32 bytes",
+        )
     })?;
     Ok(digest)
 }
