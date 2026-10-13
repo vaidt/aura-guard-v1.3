@@ -1,4 +1,7 @@
 # syntax=docker/dockerfile:1.7
+# Global ARGs used by FROM must be declared before the first stage.
+ARG RUNTIME=gcr.io/distroless/cc-debian12:nonroot
+
 # ─── builder ─────────────────────────────────────────────────────────────
 FROM rust:1.86-slim-bookworm AS builder
 
@@ -23,7 +26,6 @@ RUN cargo build --release --locked --bins
 # Production default: gcr.io/distroless/cc-debian12:nonroot (no shell, no extra tools).
 # Docker Compose / dev-staging: pass --build-arg RUNTIME=gcr.io/distroless/cc-debian12:debug-nonroot
 # to get busybox (including wget) for the health-check probe.
-ARG RUNTIME=gcr.io/distroless/cc-debian12:nonroot
 FROM ${RUNTIME}
 
 WORKDIR /app
