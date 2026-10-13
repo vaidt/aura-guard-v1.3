@@ -201,7 +201,8 @@ async fn five_hundred_parallel_http_requests_form_one_replayable_chain() {
     assert_eq!(summary["status"], "ok");
     assert_eq!(summary["entries"], REQUESTS);
     assert_eq!(
-        summary["verified_segments"], true,
+        summary["verified_segments"].as_bool(),
+        Some(true),
         "aura-replay must verify all segment manifests"
     );
     assert_eq!(
