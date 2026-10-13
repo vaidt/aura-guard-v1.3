@@ -1,15 +1,14 @@
 //! Append-only audit log writer with fail-closed write semantics.
 //!
-//! All concurrent requests serialize through a single `parking_lot::Mutex` —
-//! this guarantees that two long entries can never interleave on disk.
-//! A write failure flips a `halted` flag: subsequent audit calls return
-//! `AuraError::LogWrite` (HTTP 503) until the operator restarts the server.
+//! Record construction and durable append are one critical section. Sequence
+//! allocation, predecessor lookup, hash construction (by the caller-supplied
+//! builder), JSONL write, sync, and head advancement cannot race with another
+//! request. A write failure halts the writer until the process is restarted.
 
 use parking_lot::Mutex;
 use std::fs::{File, OpenOptions};
 use std::io::Write;
-use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::models::AuditEntry;
@@ -17,8 +16,9 @@ use crate::{AuraError, Result};
 
 /// Thread-safe audit-log writer.
 ///
-/// Cloning produces another handle to the **same** underlying file and counter,
-/// so the writer can be cheaply embedded in shared application state.
+/// Cloning produces another handle to the same underlying state and file.
+/// Every committed entry receives its sequence and predecessor while holding
+/// the writer mutex, so concurrent callers cannot construct competing heads.
 #[derive(Clone)]
 pub struct LogWriter {
     inner: Arc<Inner>,
@@ -26,10 +26,14 @@ pub struct LogWriter {
 
 struct Inner {
     path: PathBuf,
-    file: Mutex<Option<File>>,
-    next_seq: AtomicU64,
-    last_chain: Mutex<String>,
-    halted: AtomicBool,
+    state: Mutex<WriterState>,
+}
+
+struct WriterState {
+    file: Option<File>,
+    next_seq: u64,
+    last_chain: String,
+    halted: bool,
 }
 
 impl LogWriter {
@@ -44,7 +48,7 @@ impl LogWriter {
             })?;
         }
 
-        // Replay the existing file to find the head sequence + chain_hash.
+        // Replay the existing file to find the next sequence and chain head.
         let (next_seq, head_chain) = if path.exists() {
             replay_head(&path, genesis)?
         } else {
@@ -62,65 +66,126 @@ impl LogWriter {
         Ok(Self {
             inner: Arc::new(Inner {
                 path,
-                file: Mutex::new(Some(file)),
-                next_seq: AtomicU64::new(next_seq),
-                last_chain: Mutex::new(head_chain),
-                halted: AtomicBool::new(false),
+                state: Mutex::new(WriterState {
+                    file: Some(file),
+                    next_seq,
+                    last_chain: head_chain,
+                    halted: false,
+                }),
             }),
         })
     }
 
-    /// Reserve the next sequence number atomically.
-    pub fn next_seq(&self) -> u64 {
-        self.inner.next_seq.fetch_add(1, Ordering::SeqCst)
-    }
-
-    /// Return the `chain_hash` of the most recently committed entry
-    /// (or the genesis hash if no entries exist yet).
-    pub fn current_head(&self) -> String {
-        self.inner.last_chain.lock().clone()
-    }
-
-    /// Append a fully-formed entry to the log.
+    /// Return the next sequence value as a diagnostic snapshot.
     ///
-    /// Returns `AuraError::LogWrite` (fatal — flips the halted flag) on any
-    /// filesystem failure.
+    /// Do not use this to construct an entry. Request-path code must use
+    /// [`append_with`] so sequence and predecessor are captured atomically.
+    pub fn next_seq(&self) -> u64 {
+        self.inner.state.lock().next_seq
+    }
+
+    /// Return the committed chain head as a diagnostic snapshot.
+    ///
+    /// Do not use this to construct an entry. Request-path code must use
+    /// [`append_with`] so sequence and predecessor are captured atomically.
+    pub fn current_head(&self) -> String {
+        self.inner.state.lock().last_chain.clone()
+    }
+
+    /// Build, append, and durably commit one entry under a single writer lock.
+    ///
+    /// The builder receives the only valid next sequence number and the current
+    /// committed predecessor. It must return the complete entry, including its
+    /// hash computed from those values. The lock remains held through JSONL
+    /// serialization, write, sync, and head advancement.
+    pub fn append_with<F>(&self, build: F) -> Result<AuditEntry>
+    where
+        F: FnOnce(u64, &str) -> AuditEntry,
+    {
+        let mut state = self.inner.state.lock();
+        if state.halted {
+            return Err(self.halted_error());
+        }
+
+        let seq = state.next_seq;
+        let prev_hash = state.last_chain.clone();
+        let entry = build(seq, &prev_hash);
+
+        if entry.seq != seq || entry.prev_hash != prev_hash {
+            return Err(AuraError::LogWrite(
+                "entry builder changed the reserved sequence or predecessor".into(),
+            ));
+        }
+
+        Self::append_locked(&self.inner.path, &mut state, &entry)?;
+        Ok(entry)
+    }
+
+    /// Append a pre-built entry only if it still matches the current head.
+    ///
+    /// Kept for callers that already construct entries. Stale entries are
+    /// rejected rather than written into a forked chain. New request-path code
+    /// should prefer [`append_with`].
     pub fn append(&self, entry: &AuditEntry) -> Result<()> {
-        if self.inner.halted.load(Ordering::SeqCst) {
+        let mut state = self.inner.state.lock();
+        if state.halted {
+            return Err(self.halted_error());
+        }
+
+        if entry.seq != state.next_seq || entry.prev_hash != state.last_chain {
             return Err(AuraError::LogWrite(format!(
-                "audit log halted (file '{}' previously failed to write)",
-                self.inner.path.display()
+                "stale audit entry rejected: expected seq {} with prev_hash {}, got seq {} with prev_hash {}",
+                state.next_seq, state.last_chain, entry.seq, entry.prev_hash
             )));
         }
 
-        let line = serde_json::to_string(entry).map_err(AuraError::Json)?;
+        Self::append_locked(&self.inner.path, &mut state, entry)
+    }
 
-        let mut guard = self.inner.file.lock();
-        let file = guard.as_mut().ok_or_else(|| {
-            self.inner.halted.store(true, Ordering::SeqCst);
-            AuraError::LogWrite("audit log file handle was closed".into())
+    fn append_locked(path: &Path, state: &mut WriterState, entry: &AuditEntry) -> Result<()> {
+        // Reserve capacity for the following sequence before writing, so an
+        // integer overflow cannot leave a committed entry without a successor.
+        let following_seq = entry.seq.checked_add(1).ok_or_else(|| {
+            AuraError::LogWrite("audit sequence exhausted at u64::MAX".into())
         })?;
 
-        if let Err(e) = writeln!(file, "{line}") {
-            self.inner.halted.store(true, Ordering::SeqCst);
-            return Err(AuraError::LogWrite(format!("write failed: {e}")));
+        let line = serde_json::to_string(entry).map_err(AuraError::Json)?;
+        let write_result = match state.file.as_mut() {
+            Some(file) => writeln!(file, "{line}").and_then(|()| file.sync_data()),
+            None => {
+                state.halted = true;
+                return Err(AuraError::LogWrite("audit log file handle was closed".into()));
+            }
+        };
+
+        if let Err(e) = write_result {
+            state.halted = true;
+            return Err(AuraError::LogWrite(format!(
+                "write/sync failed for log '{}': {e}",
+                path.display()
+            )));
         }
-        if let Err(e) = file.sync_data() {
-            self.inner.halted.store(true, Ordering::SeqCst);
-            return Err(AuraError::LogWrite(format!("fsync failed: {e}")));
-        }
-        *self.inner.last_chain.lock() = entry.chain_hash.clone();
+
+        state.last_chain = entry.chain_hash.clone();
+        state.next_seq = following_seq;
         Ok(())
+    }
+
+    fn halted_error(&self) -> AuraError {
+        AuraError::LogWrite(format!(
+            "audit log halted (file '{}' previously failed to write)",
+            self.inner.path.display()
+        ))
     }
 
     /// Whether the writer is in the halted (fail-closed) state.
     pub fn is_halted(&self) -> bool {
-        self.inner.halted.load(Ordering::SeqCst)
+        self.inner.state.lock().halted
     }
 }
 
 /// Re-read the existing log to find the next sequence and head chain_hash.
-fn replay_head(path: &std::path::Path, genesis: &str) -> Result<(u64, String)> {
+fn replay_head(path: &Path, genesis: &str) -> Result<(u64, String)> {
     let raw = std::fs::read_to_string(path).map_err(|e| {
         AuraError::LogWrite(format!(
             "cannot read existing log '{}': {e}",
@@ -143,12 +208,18 @@ fn replay_head(path: &std::path::Path, genesis: &str) -> Result<(u64, String)> {
         last_seq = Some(entry.seq);
         head_chain = entry.chain_hash;
     }
-    let next_seq = last_seq.map(|s| s + 1).unwrap_or(0);
+    let next_seq = last_seq
+        .map(|s| {
+            s.checked_add(1)
+                .ok_or_else(|| AuraError::LogWrite("audit sequence exhausted at u64::MAX".into()))
+        })
+        .transpose()?
+        .unwrap_or(0);
     Ok((next_seq, head_chain))
 }
 
 /// Parse a JSONL audit log into structured entries. Used by `aura-replay`.
-pub fn read_all_entries(path: &std::path::Path) -> Result<Vec<AuditEntry>> {
+pub fn read_all_entries(path: &Path) -> Result<Vec<AuditEntry>> {
     let raw = std::fs::read_to_string(path).map_err(|e| AuraError::PolicyRead {
         path: path.display().to_string(),
         source: e,
@@ -166,4 +237,122 @@ pub fn read_all_entries(path: &std::path::Path) -> Result<Vec<AuditEntry>> {
         entries.push(entry);
     }
     Ok(entries)
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod tests {
+    use super::*;
+    use crate::chain::{compute_chain_hash, verify_chain};
+    use crate::crypto::{genesis_hash, sha256_hex};
+    use crate::models::AuditEntry;
+    use std::sync::{Arc, Barrier};
+
+    fn build_entry(seq: u64, prev_hash: &str, worker: usize, iteration: usize) -> AuditEntry {
+        let timestamp = "2026-10-14T00:00:00+00:00".to_string();
+        let decision = "ALLOW".to_string();
+        let policy_set = "stress-test".to_string();
+        let policy_hash = "a".repeat(64);
+        let context = format!("worker-{worker}-iteration-{iteration}");
+        let input_hash = sha256_hex(&format!("input-{worker}-{iteration}"));
+        let shadow_hash = sha256_hex(&format!("shadow-{worker}-{iteration}"));
+        let chain_hash = compute_chain_hash(
+            prev_hash,
+            &decision,
+            &policy_set,
+            &policy_hash,
+            &context,
+            &input_hash,
+            &shadow_hash,
+            seq,
+            &timestamp,
+        );
+
+        AuditEntry {
+            schema: "aura-guard.audit.v1".into(),
+            seq,
+            audit_id: format!("{worker:04}-{iteration:02}"),
+            request_id: None,
+            timestamp,
+            decision,
+            policy_set,
+            policy_hash,
+            context,
+            input_hash,
+            shadow_hash,
+            violations: vec![],
+            prev_hash: prev_hash.to_string(),
+            chain_hash,
+        }
+    }
+
+    #[test]
+    fn concurrent_appends_produce_one_contiguous_chain() {
+        const WORKERS: usize = 256;
+        const APPENDS_PER_WORKER: usize = 2;
+        const TOTAL: usize = WORKERS * APPENDS_PER_WORKER;
+
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let path = directory.path().join("audit.jsonl");
+        let writer = LogWriter::open(path.clone(), &genesis_hash()).expect("open writer");
+        let barrier = Arc::new(Barrier::new(WORKERS));
+
+        let handles: Vec<_> = (0..WORKERS)
+            .map(|worker| {
+                let writer = writer.clone();
+                let barrier = barrier.clone();
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    let mut seqs = Vec::with_capacity(APPENDS_PER_WORKER);
+                    for iteration in 0..APPENDS_PER_WORKER {
+                        let entry = writer
+                            .append_with(|seq, prev_hash| {
+                                build_entry(seq, prev_hash, worker, iteration)
+                            })
+                            .expect("atomic append");
+                        seqs.push(entry.seq);
+                    }
+                    seqs
+                })
+            })
+            .collect();
+
+        let mut seqs: Vec<u64> = handles
+            .into_iter()
+            .flat_map(|handle| handle.join().expect("worker completes"))
+            .collect();
+        seqs.sort_unstable();
+        assert_eq!(seqs, (0..TOTAL as u64).collect::<Vec<_>>());
+
+        let entries = read_all_entries(&path).expect("read written JSONL");
+        assert_eq!(entries.len(), TOTAL);
+        assert_eq!(verify_chain(&entries).expect("replay valid chain"), entries.last().unwrap().chain_hash);
+        for (index, entry) in entries.iter().enumerate() {
+            assert_eq!(entry.seq, index as u64);
+            let expected_prev = if index == 0 {
+                genesis_hash()
+            } else {
+                entries[index - 1].chain_hash.clone()
+            };
+            assert_eq!(entry.prev_hash, expected_prev);
+        }
+    }
+
+    #[test]
+    fn append_rejects_a_stale_prebuilt_entry_instead_of_forking_the_chain() {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let path = directory.path().join("audit.jsonl");
+        let genesis = genesis_hash();
+        let writer = LogWriter::open(path.clone(), &genesis).expect("open writer");
+
+        let stale = build_entry(0, &genesis, 1, 0);
+        writer
+            .append_with(|seq, prev_hash| build_entry(seq, prev_hash, 2, 0))
+            .expect("first entry committed");
+
+        assert!(writer.append(&stale).is_err());
+        let entries = read_all_entries(&path).expect("read JSONL");
+        assert_eq!(entries.len(), 1);
+        verify_chain(&entries).expect("chain remains intact");
+    }
 }
