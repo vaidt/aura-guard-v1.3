@@ -102,6 +102,25 @@ impl LogWriter {
     where
         F: FnOnce(u64, &str) -> AuditEntry,
     {
+        self.append_with_observer(build, |_| {})
+    }
+
+    /// Build, append, and durably commit one entry under a single writer lock,
+    /// then invoke `after_commit` before allowing another append to proceed.
+    ///
+    /// The callback is the ordered hand-off point for dependent append-side
+    /// state, such as the segment sealer. It runs after the JSONL line is
+    /// synced and the writer head has advanced, but while the writer mutex is
+    /// still held. The callback must not attempt to append through this writer.
+    pub(crate) fn append_with_observer<F, O>(
+        &self,
+        build: F,
+        after_commit: O,
+    ) -> Result<AuditEntry>
+    where
+        F: FnOnce(u64, &str) -> AuditEntry,
+        O: FnOnce(&AuditEntry),
+    {
         let mut state = self.inner.state.lock();
         if state.halted {
             return Err(self.halted_error());
@@ -118,6 +137,7 @@ impl LogWriter {
         }
 
         Self::append_locked(&self.inner.path, &mut state, &entry)?;
+        after_commit(&entry);
         Ok(entry)
     }
 
