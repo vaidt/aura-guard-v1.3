@@ -118,8 +118,8 @@ jobs:
             D3_REAL_CHAIN_CANONICAL.bin
             D3_REAL_CHAIN_SEMANTIC_FIXTURE.json
 
-  # Gate 1: exercise the real HTTP request path under concurrency and verify
-  # the resulting JSONL with the independent aura-replay binary.
+  # Gate 1b: exercise concurrent HTTP appends with segment sealing enabled;
+  # independently verify both the JSONL chain and Merkle segment manifests.
   concurrency-stress:
     name: GUARD-RS-001 concurrent HTTP stress + replay
     needs: [ test ]
@@ -136,7 +136,7 @@ jobs:
         run: |
           set -euo pipefail
           export AURA_API_KEY="$(openssl rand -hex 32)"
-          export AURA_SEGMENT_SIZE=0
+          export AURA_SEGMENT_SIZE=50
           export AURA_SEGMENT_INTERVAL_SECONDS=0
 
           ./target/release/aura-guard > /tmp/aura-guard-stress.log 2>&1 &
