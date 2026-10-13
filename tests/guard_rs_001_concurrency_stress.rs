@@ -28,17 +28,19 @@ const WORKERS: usize = 200;
 const API_KEY: &str = "guard-rs-001-stress-api-key-0123456789abcdef";
 
 fn test_state(log_path: PathBuf, temp_root: &Path) -> AppState {
-    let mut config = Config::default();
-    config.api_key = Some(API_KEY.to_string());
-    config.auth_disabled = false;
-    config.audit_log_path = log_path.clone();
-    config.default_policy_set = "stress-policy".to_string();
-    config.policies_dir = temp_root.join("policies");
-    config.trusted_signers_file = temp_root.join("trusted_signers.json");
-    config.segments_dir = temp_root.join("segments");
-    config.segment_size = 0;
-    config.segment_interval_seconds = 0;
-    config.request_timeout_ms = 60_000;
+    let config = Config {
+        api_key: Some(API_KEY.to_string()),
+        auth_disabled: false,
+        audit_log_path: log_path.clone(),
+        default_policy_set: "stress-policy".to_string(),
+        policies_dir: temp_root.join("policies"),
+        trusted_signers_file: temp_root.join("trusted_signers.json"),
+        segments_dir: temp_root.join("segments"),
+        segment_size: 0,
+        segment_interval_seconds: 0,
+        request_timeout_ms: 60_000,
+        ..Config::default()
+    };
     config.validate().expect("test config is valid");
 
     let policy = CompiledPolicy {
