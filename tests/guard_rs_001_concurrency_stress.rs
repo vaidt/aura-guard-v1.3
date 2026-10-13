@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
 
 use regex::Regex;
 use serde_json::{json, Value};
@@ -22,6 +23,7 @@ use aura_guard::crypto::{genesis_hash, sha256_hex};
 use aura_guard::log_writer::{read_all_entries, LogWriter};
 use aura_guard::models::AuditEntry;
 use aura_guard::policy::{CompiledPolicy, CompiledRule, TrustedSigners};
+use aura_guard::sealer::SegmentSealer;
 
 const REQUESTS: usize = 500;
 const WORKERS: usize = 200;
@@ -36,12 +38,24 @@ fn test_state(log_path: PathBuf, temp_root: &Path) -> AppState {
         policies_dir: temp_root.join("policies"),
         trusted_signers_file: temp_root.join("trusted_signers.json"),
         segments_dir: temp_root.join("segments"),
-        segment_size: 0,
+        segment_size: 50,
         segment_interval_seconds: 0,
         request_timeout_ms: 60_000,
         ..Config::default()
     };
     config.validate().expect("test config is valid");
+
+    // Enable real segment sealing at a low threshold so this regression test
+    // verifies ordering across both the JSONL chain and the Merkle manifests.
+    let sealer = SegmentSealer::new(
+        config.segments_dir.clone(),
+        config.segment_size,
+        Duration::from_secs(config.segment_interval_seconds),
+    )
+    .expect("create temporary segment sealer");
+    sealer
+        .prime_from_log(&log_path)
+        .expect("prime segment sealer from existing log");
 
     let policy = CompiledPolicy {
         name: "stress-policy".to_string(),
@@ -66,7 +80,7 @@ fn test_state(log_path: PathBuf, temp_root: &Path) -> AppState {
         log: LogWriter::open(log_path, &genesis_hash()).expect("open temporary audit log"),
         signers: Arc::new(TrustedSigners::empty()),
         enforce_signatures: false,
-        sealer: None,
+        sealer: Some(sealer),
     }
 }
 
@@ -169,6 +183,9 @@ async fn five_hundred_parallel_http_requests_form_one_replayable_chain() {
     let replay = Command::new(env!("CARGO_BIN_EXE_aura-replay"))
         .arg("--log")
         .arg(&log_path)
+        .arg("--verify-segments")
+        .arg("--segments-dir")
+        .arg(directory.path().join("segments"))
         .arg("--json")
         .output()
         .expect("run aura-replay");
@@ -183,4 +200,12 @@ async fn five_hundred_parallel_http_requests_form_one_replayable_chain() {
         serde_json::from_slice(&replay.stdout).expect("aura-replay emits JSON summary");
     assert_eq!(summary["status"], "ok");
     assert_eq!(summary["entries"], REQUESTS);
+    assert_eq!(
+        summary["verified_segments"], true,
+        "aura-replay must verify all segment manifests"
+    );
+    assert_eq!(
+        summary["segments"], 10,
+        "500 entries at a 50-entry threshold must produce 10 segments"
+    );
 }
