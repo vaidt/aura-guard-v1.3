@@ -145,16 +145,19 @@ impl LogWriter {
     fn append_locked(path: &Path, state: &mut WriterState, entry: &AuditEntry) -> Result<()> {
         // Reserve capacity for the following sequence before writing, so an
         // integer overflow cannot leave a committed entry without a successor.
-        let following_seq = entry.seq.checked_add(1).ok_or_else(|| {
-            AuraError::LogWrite("audit sequence exhausted at u64::MAX".into())
-        })?;
+        let following_seq = entry
+            .seq
+            .checked_add(1)
+            .ok_or_else(|| AuraError::LogWrite("audit sequence exhausted at u64::MAX".into()))?;
 
         let line = serde_json::to_string(entry).map_err(AuraError::Json)?;
         let write_result = match state.file.as_mut() {
             Some(file) => writeln!(file, "{line}").and_then(|()| file.sync_data()),
             None => {
                 state.halted = true;
-                return Err(AuraError::LogWrite("audit log file handle was closed".into()));
+                return Err(AuraError::LogWrite(
+                    "audit log file handle was closed".into(),
+                ));
             }
         };
 
@@ -326,7 +329,10 @@ mod tests {
 
         let entries = read_all_entries(&path).expect("read written JSONL");
         assert_eq!(entries.len(), TOTAL);
-        assert_eq!(verify_chain(&entries).expect("replay valid chain"), entries.last().unwrap().chain_hash);
+        assert_eq!(
+            verify_chain(&entries).expect("replay valid chain"),
+            entries.last().unwrap().chain_hash
+        );
         for (index, entry) in entries.iter().enumerate() {
             assert_eq!(entry.seq, index as u64);
             let expected_prev = if index == 0 {
