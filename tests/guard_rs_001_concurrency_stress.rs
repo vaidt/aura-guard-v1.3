@@ -120,9 +120,7 @@ async fn five_hundred_parallel_http_requests_form_one_replayable_chain() {
                     .send_string(&body)
                     .unwrap_or_else(|error| panic!("HTTP request {index} failed: {error}"));
                 assert_eq!(response.status(), 200, "request {index}");
-                let response_body = response
-                    .into_string()
-                    .expect("read HTTP response body");
+                let response_body = response.into_string().expect("read HTTP response body");
                 let entry: AuditEntry =
                     serde_json::from_str(&response_body).expect("response is an audit entry");
                 assert_eq!(entry.request_id.as_deref(), Some(request_id.as_str()));
@@ -151,8 +149,15 @@ async fn five_hundred_parallel_http_requests_form_one_replayable_chain() {
         (0..REQUESTS as u64).collect::<Vec<_>>(),
         "HTTP response sequence numbers must be unique and contiguous"
     );
-    let response_ids: HashSet<&str> = entries.iter().map(|entry| entry.audit_id.as_str()).collect();
-    assert_eq!(response_ids.len(), REQUESTS, "audit_id values must be unique");
+    let response_ids: HashSet<&str> = entries
+        .iter()
+        .map(|entry| entry.audit_id.as_str())
+        .collect();
+    assert_eq!(
+        response_ids.len(),
+        REQUESTS,
+        "audit_id values must be unique"
+    );
 
     let persisted = read_all_entries(&log_path).expect("read persisted JSONL");
     assert_eq!(persisted.len(), REQUESTS);
