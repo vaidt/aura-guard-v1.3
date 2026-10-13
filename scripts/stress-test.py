@@ -26,6 +26,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--requests", type=int, default=500)
     parser.add_argument("--workers", type=int, default=200)
     parser.add_argument("--log", type=Path, default=Path("logs/audit.jsonl"))
+    parser.add_argument("--segments-dir", type=Path, default=Path("logs/segments"))
     parser.add_argument("--replay", type=Path, default=Path("target/release/aura-replay"))
     parser.add_argument("--timeout", type=float, default=45.0)
     args = parser.parse_args()
@@ -165,6 +166,8 @@ def main() -> int:
         "--policies-dir", "policies",
         "--trusted-signers", "policies/trusted_signers.json",
         "--verify-lineage",
+        "--verify-segments",
+        "--segments-dir", str(args.segments_dir),
         "--json",
     ]
     replay = subprocess.run(command, capture_output=True, text=True, check=False)
@@ -180,7 +183,12 @@ def main() -> int:
         print(replay.stdout, file=sys.stderr)
         print(replay.stderr, file=sys.stderr)
         return 1
-    if replay_result.get("status") != "ok" or replay_result.get("entries") != len(all_entries):
+    if (
+        replay_result.get("status") != "ok"
+        or replay_result.get("entries") != len(all_entries)
+        or replay_result.get("verified_segments") is not True
+        or replay_result.get("segments", 0) < 1
+    ):
         print(f"STRESS FAIL: unexpected aura-replay result: {replay_result}", file=sys.stderr)
         return 1
 
