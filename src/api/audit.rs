@@ -115,39 +115,51 @@ pub async fn handle_audit(
     // Chain construction and durable append are one serialized operation.
     // The writer supplies the only valid next sequence and predecessor while
     // holding its mutex; no concurrent request can hash against the same head.
+    // The sealer receives committed entries before the writer lock is released.
+    // This keeps the Merkle leaf order identical to the JSONL sequence order,
+    // including when many HTTP handlers are appending concurrently.
+    let sealer = state.sealer.clone();
+    let mut sealer_result = None;
     let entry = state
         .log
-        .append_with(|seq, prev_hash| {
-            let timestamp = Utc::now().to_rfc3339();
-            let chain_hash = compute_chain_hash(
-                prev_hash,
-                &decision,
-                &policy.name,
-                &policy.policy_hash,
-                &req.context,
-                &input_hash,
-                &shadow_hash,
-                seq,
-                &timestamp,
-            );
+        .append_with_observer(
+            |seq, prev_hash| {
+                let timestamp = Utc::now().to_rfc3339();
+                let chain_hash = compute_chain_hash(
+                    prev_hash,
+                    &decision,
+                    &policy.name,
+                    &policy.policy_hash,
+                    &req.context,
+                    &input_hash,
+                    &shadow_hash,
+                    seq,
+                    &timestamp,
+                );
 
-            AuditEntry {
-                schema: "aura-guard.audit.v1".into(),
-                seq,
-                audit_id: audit_id.clone(),
-                request_id: request_id.clone(),
-                timestamp,
-                decision: decision.clone(),
-                policy_set: policy.name.clone(),
-                policy_hash: policy.policy_hash.clone(),
-                context: req.context.clone(),
-                input_hash: input_hash.clone(),
-                shadow_hash: shadow_hash.clone(),
-                violations: violations.clone(),
-                prev_hash: prev_hash.to_string(),
-                chain_hash,
-            }
-        })
+                AuditEntry {
+                    schema: "aura-guard.audit.v1".into(),
+                    seq,
+                    audit_id: audit_id.clone(),
+                    request_id: request_id.clone(),
+                    timestamp,
+                    decision: decision.clone(),
+                    policy_set: policy.name.clone(),
+                    policy_hash: policy.policy_hash.clone(),
+                    context: req.context.clone(),
+                    input_hash: input_hash.clone(),
+                    shadow_hash: shadow_hash.clone(),
+                    violations: violations.clone(),
+                    prev_hash: prev_hash.to_string(),
+                    chain_hash,
+                }
+            },
+            |committed_entry| {
+                if let Some(sealer) = &sealer {
+                    sealer_result = Some(sealer.observe(committed_entry));
+                }
+            },
+        )
         .map_err(|e| {
             tracing::error!(
                 error = %e,
@@ -165,11 +177,10 @@ pub async fn handle_audit(
             (StatusCode::SERVICE_UNAVAILABLE, e.to_string())
         })?;
 
-    // Notify the segment sealer (fail-open: a sealer error is logged but
-    // does not poison the audit response — the entry itself is already
-    // durably committed and the chain remains verifiable).
-    if let Some(sealer) = &state.sealer {
-        match sealer.observe(&entry) {
+    // Sealing remains fail-open with respect to the already durable audit
+    // record, but its observation was ordered before another append could run.
+    if let Some(observe_result) = sealer_result {
+        match observe_result {
             Ok(crate::sealer::SealOutcome::Sealed {
                 segment_id,
                 entry_count,
