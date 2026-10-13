@@ -112,57 +112,58 @@ pub async fn handle_audit(
     // Evaluate.
     let (decision, violations) = evaluate(&shadow, &req.context, &policy.rules);
 
-    // Chain construction.
-    let seq = state.log.next_seq();
-    let timestamp = Utc::now().to_rfc3339();
-    let prev_hash = state.log.current_head();
-    let chain_hash = compute_chain_hash(
-        &prev_hash,
-        &decision,
-        &policy.name,
-        &policy.policy_hash,
-        &req.context,
-        &input_hash,
-        &shadow_hash,
-        seq,
-        &timestamp,
-    );
+    // Chain construction and durable append are one serialized operation.
+    // The writer supplies the only valid next sequence and predecessor while
+    // holding its mutex; no concurrent request can hash against the same head.
+    let entry = state
+        .log
+        .append_with(|seq, prev_hash| {
+            let timestamp = Utc::now().to_rfc3339();
+            let chain_hash = compute_chain_hash(
+                prev_hash,
+                &decision,
+                &policy.name,
+                &policy.policy_hash,
+                &req.context,
+                &input_hash,
+                &shadow_hash,
+                seq,
+                &timestamp,
+            );
 
-    let entry = AuditEntry {
-        schema: "aura-guard.audit.v1".into(),
-        seq,
-        audit_id,
-        request_id,
-        timestamp,
-        decision: decision.clone(),
-        policy_set: policy.name.clone(),
-        policy_hash: policy.policy_hash.clone(),
-        context: req.context.clone(),
-        input_hash,
-        shadow_hash,
-        violations: violations.clone(),
-        prev_hash,
-        chain_hash,
-    };
-
-    // Fail-closed: if the log refuses to write, return 503.
-    state.log.append(&entry).map_err(|e| {
-        tracing::error!(
-            error = %e,
-            audit_id = %entry.audit_id,
-            request_id = ?entry.request_id,
-            seq = entry.seq,
-            "audit log write failed — fail-closed",
-        );
-        metrics::counter!(
-            "aura_guard_requests_total",
-            "status" => "503",
-            "decision" => decision.clone(),
-            "policy_set" => policy.name.clone(),
-        )
-        .increment(1);
-        (StatusCode::SERVICE_UNAVAILABLE, e.to_string())
-    })?;
+            AuditEntry {
+                schema: "aura-guard.audit.v1".into(),
+                seq,
+                audit_id: audit_id.clone(),
+                request_id: request_id.clone(),
+                timestamp,
+                decision: decision.clone(),
+                policy_set: policy.name.clone(),
+                policy_hash: policy.policy_hash.clone(),
+                context: req.context.clone(),
+                input_hash: input_hash.clone(),
+                shadow_hash: shadow_hash.clone(),
+                violations: violations.clone(),
+                prev_hash: prev_hash.to_string(),
+                chain_hash,
+            }
+        })
+        .map_err(|e| {
+            tracing::error!(
+                error = %e,
+                audit_id = %audit_id,
+                request_id = ?request_id,
+                "audit log write failed — fail-closed",
+            );
+            metrics::counter!(
+                "aura_guard_requests_total",
+                "status" => "503",
+                "decision" => decision.clone(),
+                "policy_set" => policy.name.clone(),
+            )
+            .increment(1);
+            (StatusCode::SERVICE_UNAVAILABLE, e.to_string())
+        })?;
 
     // Notify the segment sealer (fail-open: a sealer error is logged but
     // does not poison the audit response — the entry itself is already
