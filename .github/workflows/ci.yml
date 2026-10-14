@@ -55,7 +55,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: vaidt/aura-poc-a-core-v3.3
-          ref: main
+          ref: cdf9bbf2b8420732f85a77197ea753809edbb029
           path: aura-poc-a-core-v3.3
       - uses: dtolnay/rust-toolchain@1.86.0
       - uses: actions/setup-python@v5
@@ -66,7 +66,7 @@ jobs:
         env:
           AURA_CORE_PATH: ${{ github.workspace }}/aura-poc-a-core-v3.3
           AURA_CORE_CONSTITUTION_VECTOR: '[100000,0,0,0]'
-          AURA_CORE_VERSION: 'core-v3.3'
+          AURA_CORE_VERSION: 'core-v3.3+cdf9bbf2b842'
           AURA_CORE_PYTHON: python3
         run: cargo test --locked --test core_measurement_tamper -- --nocapture
 
