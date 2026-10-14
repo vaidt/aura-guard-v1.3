@@ -9,8 +9,10 @@
 //!
 //! Behaviour:
 //!
-//! * Always verifies the SHA-256 hash chain. A break aborts with exit code `2`
-//!   and prints `CHAIN BREAK DETECTED at entry #N`.
+//! * Always verifies the SHA-256 hash chain. Historical v1 entries retain their
+//!   original preimage; v2 entries require a well-formed `core_measurement` and
+//!   verify its compact, length-prefixed JSON as part of `chain_hash`. A break
+//!   aborts with exit code `2` and prints `CHAIN BREAK DETECTED at entry #N`.
 //! * With `--verify-lineage`, the on-disk policy file referenced by each
 //!   entry is reloaded and its SHA-256 is compared against the `policy_hash`
 //!   stored in the log. Mismatches abort with exit code `3`
@@ -104,10 +106,16 @@ fn main() -> ExitCode {
         }
     };
 
+    let core_measurement_count = entries
+        .iter()
+        .filter(|entry| entry.core_measurement.is_some())
+        .count();
+
     if !args.json {
         println!("aura-replay v{}", env!("CARGO_PKG_VERSION"));
         println!("log: {}", args.log.display());
         println!("entries: {}", entries.len());
+        println!("entries with core_measurement: {core_measurement_count}");
     }
 
     let head = match verify_chain(&entries) {
@@ -202,6 +210,7 @@ fn main() -> ExitCode {
         let out = serde_json::json!({
             "status": "ok",
             "entries": entries.len(),
+            "core_measurements": core_measurement_count,
             "head_chain_hash": head,
             "verified_lineage": verify_lineage,
             "verified_segments": args.verify_segments,
