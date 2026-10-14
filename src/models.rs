@@ -53,10 +53,15 @@ pub enum CoreMeasurementStatus {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct CoreMeasurement {
+    /// Whether a measure was computed, explicitly omitted, or failed.
     pub status: CoreMeasurementStatus,
+    /// Raw integer ARI at the Core fixed-point scale; null unless COMPLETED.
     pub ari: Option<i64>,
+    /// Raw integer drift at the Core fixed-point scale; null unless COMPLETED.
     pub drift: Option<i64>,
+    /// Configured evaluator label used to interpret the result.
     pub evaluator_version: String,
+    /// SHA-256 of compact measurement-input JSON; null for OMITTED.
     #[serde(default)]
     pub measurement_input_hash: Option<String>,
 }
