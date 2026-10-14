@@ -42,6 +42,34 @@ jobs:
       - run: cargo build --locked --release --all-targets
       - run: cargo test --locked --all-targets
 
+  # Gate 3: exercise the adapter against the real AURA Core Python repository.
+  # The single integration test drives POST /v1/audit, confirms passive measurement,
+  # verifies the JSONL + Merkle segment, then tampers ARI and requires replay refusal.
+  gate3-core-integration:
+    name: Gate 3 real Core API/hash/replay integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Checkout AURA Core evaluator
+        uses: actions/checkout@v4
+        with:
+          repository: vaidt/aura-poc-a-core-v3.3
+          ref: cdf9bbf2b8420732f85a77197ea753809edbb029
+          path: aura-poc-a-core-v3.3
+      - uses: dtolnay/rust-toolchain@1.86.0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: Swatinem/rust-cache@v2
+      - name: Run real Core-backed tamper integration
+        env:
+          AURA_CORE_PATH: ${{ github.workspace }}/aura-poc-a-core-v3.3
+          AURA_CORE_CONSTITUTION_VECTOR: '[100000,0,0,0]'
+          AURA_CORE_VERSION: 'core-v3.3+cdf9bbf2b842'
+          AURA_CORE_PYTHON: python3
+        run: cargo test --locked --test core_measurement_tamper -- --nocapture
+
   # cargo-{audit,deny,cyclonedx} track current stable rustc; using @stable
   # here is intentional. The MSRV guarantee for the *crate itself* is
   # enforced by the fmt/clippy/test jobs which pin to 1.86.0.

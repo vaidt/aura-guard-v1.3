@@ -44,6 +44,7 @@ than part of a restart loop.
                                       │   logs/audit.jsonl (JSONL)     │
                                       │   - schema, seq, audit_id      │
                                       │   - input_hash, shadow_hash    │
+                                      │   - optional core_measurement  │
                                       │   - policy_hash (provenance)   │
                                       │   - prev_hash + chain_hash     │
                                       │                                │
@@ -90,10 +91,22 @@ shadow path **never** mutates the on-disk audit data.
 
 ## Hash-chain digest (`chain.rs`)
 
+New entries use `aura-guard.audit.v2`. They retain the existing v1 preimage
+and append the compact JSON representation of `core_measurement` using a
+UTF-8 byte-length prefix:
+
 ```text
-chain_hash = SHA-256( prev_hash | decision | policy_set | policy_hash
-                     | context | input_hash | shadow_hash | seq | timestamp )
+measurement_json = compact JSON(CoreMeasurement in declared field order)
+chain_preimage_v2 = chain_preimage_v1 | byte_length(measurement_json):measurement_json
+chain_hash = SHA-256(chain_preimage_v2)
 ```
+
+The Core measurement contains status, ARI, drift, evaluator version and a hash
+of the exact measurement input. Changing any of those fields, including ARI,
+changes the recomputed chain hash. Historical `aura-guard.audit.v1` entries
+without `core_measurement` retain their original preimage and remain replayable.
+The verifier rejects a v1 record that carries the v2 block, a v2 record missing
+the block, and malformed status/result combinations.
 
 `prev_hash` of entry #0 is the canonical
 `SHA-256("AURA-GUARD-GENESIS-v1.3")`. The genesis hash is published in

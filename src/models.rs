@@ -16,6 +16,110 @@ pub struct AuditRequest {
 
     /// The actual AI interaction being audited.
     pub payload: Payload,
+
+    /// Optional pre-normalized fixed-point vector for the Python PoCA evaluator.
+    /// Omission preserves the original text-policy-only request path.
+    #[serde(default)]
+    pub measurement_input: Option<MeasurementInput>,
+}
+
+/// Optional input forwarded to the configured AURA Core adapter.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MeasurementInput {
+    /// Pre-normalized integer vector, scaled by the Core's fixed-point factor.
+    pub vector: Vec<i32>,
+    /// Whether the caller's measurement schema passed validation.
+    pub valid_schema: bool,
+}
+
+/// Execution state for the optional Core measurement.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum CoreMeasurementStatus {
+    /// The configured Core evaluator ran and returned both integer measures.
+    Completed,
+    /// No measurement_input was supplied with the audit request.
+    Omitted,
+    /// A measurement was requested but the adapter could not produce a result.
+    Error,
+}
+
+/// Measurement output included in the response, JSONL record, and chain preimage.
+///
+/// Fields are serialized in declaration order as compact JSON for deterministic
+/// hashing. measurement_input_hash binds the result (or error) to the exact
+/// canonical JSON representation of the requested vector and schema flag.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct CoreMeasurement {
+    /// Whether a measure was computed, explicitly omitted, or failed.
+    pub status: CoreMeasurementStatus,
+    /// Raw integer ARI at the Core fixed-point scale; null unless COMPLETED.
+    pub ari: Option<i64>,
+    /// Raw integer drift at the Core fixed-point scale; null unless COMPLETED.
+    pub drift: Option<i64>,
+    /// Configured evaluator label used to interpret the result.
+    pub evaluator_version: String,
+    /// SHA-256 of compact measurement-input JSON; null for OMITTED.
+    pub measurement_input_hash: Option<String>,
+}
+
+impl CoreMeasurement {
+    /// Construct the explicit no-measurement observation for legacy text-only requests.
+    pub fn omitted(evaluator_version: impl Into<String>) -> Self {
+        Self {
+            status: CoreMeasurementStatus::Omitted,
+            ari: None,
+            drift: None,
+            evaluator_version: evaluator_version.into(),
+            measurement_input_hash: None,
+        }
+    }
+
+    /// Construct an error observation without changing the policy decision path.
+    pub fn error(evaluator_version: impl Into<String>, input_hash: String) -> Self {
+        Self {
+            status: CoreMeasurementStatus::Error,
+            ari: None,
+            drift: None,
+            evaluator_version: evaluator_version.into(),
+            measurement_input_hash: Some(input_hash),
+        }
+    }
+
+    /// Return whether status and result fields form a structurally valid combination.
+    pub fn is_well_formed(&self) -> bool {
+        let status_fields_match = match self.status {
+            CoreMeasurementStatus::Completed => {
+                self.ari.is_some()
+                    && self.drift.is_some()
+                    && self
+                        .measurement_input_hash
+                        .as_ref()
+                        .is_some_and(|h| is_sha256_hex(h))
+            }
+            CoreMeasurementStatus::Omitted => {
+                self.ari.is_none() && self.drift.is_none() && self.measurement_input_hash.is_none()
+            }
+            CoreMeasurementStatus::Error => {
+                self.ari.is_none()
+                    && self.drift.is_none()
+                    && self
+                        .measurement_input_hash
+                        .as_ref()
+                        .is_some_and(|h| is_sha256_hex(h))
+            }
+        };
+        status_fields_match && !self.evaluator_version.trim().is_empty()
+    }
+}
+
+fn is_sha256_hex(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
 }
 
 /// Prompt / response pair being audited.
@@ -86,12 +190,16 @@ pub struct AuditEntry {
     /// SHA-256 of the SHADOW_SPEC-normalized input (regex evaluation surface).
     pub shadow_hash: String,
 
+    /// Optional AURA Core measurement. Missing only in historical v1 audit records.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub core_measurement: Option<CoreMeasurement>,
+
     /// Rule matches that contributed to the decision.
     pub violations: Vec<Violation>,
 
     /// `chain_hash` of the previous entry (or the genesis hash for entry #0).
     pub prev_hash: String,
 
-    /// `SHA-256(prev_hash || decision || policy_set || input_hash || shadow_hash || seq || timestamp)`.
+    /// SHA-256 chain digest; v2 includes the length-prefixed canonical core_measurement JSON.
     pub chain_hash: String,
 }

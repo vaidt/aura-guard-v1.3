@@ -299,6 +299,7 @@ mod tests {
             context,
             input_hash,
             shadow_hash,
+            core_measurement: None,
             violations: vec![],
             prev_hash: prev_hash.to_string(),
             chain_hash,

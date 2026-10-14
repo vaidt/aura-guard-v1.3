@@ -11,6 +11,7 @@
 pub mod auth;
 pub mod chain;
 pub mod config;
+pub mod core_adapter;
 pub mod crypto;
 pub mod engine;
 pub mod error;

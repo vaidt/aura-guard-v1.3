@@ -145,6 +145,56 @@ Architecture decisions: [`docs/adrs/`](docs/adrs/).
 
 ---
 
+## Gate 3 — Optional AURA Core Measurement
+
+`POST /v1/audit` accepts an optional `measurement_input` alongside the existing
+text payload. When present, Aura-Guard invokes the configured AURA Core v3.3
+Python evaluator through the bundled one-shot adapter. ARI/drift are **passive
+evidence** in this Gate 3 increment; the existing Rust YAML policy engine alone
+continues to determine `ALLOW`, `REVIEW`, or `DENY`.
+
+Example request:
+
+```json
+{
+  "context": "Finance Bot",
+  "policy_set": "finance-v1",
+  "payload": { "prompt": "Example text input", "response": "Example text output" },
+  "measurement_input": {
+    "vector": [100000, 0, 0, 0],
+    "valid_schema": true
+  }
+}
+```
+
+To enable actual measurement, configure the server process:
+
+```bash
+export AURA_CORE_PATH=/opt/aura-poc-a-core-v3.3
+export AURA_CORE_CONSTITUTION_VECTOR='[100000,0,0,0]'
+export AURA_CORE_PYTHON=python3       # optional; defaults to python3
+export AURA_CORE_VERSION=core-v3.3    # optional label
+```
+
+`AURA_CORE_PATH` must contain `core/evaluator.py`. The configured constitution
+vector and each request vector must have matching dimensions. The adapter
+starts a local Python process without shell interpolation and does not itself make
+network calls; this is not an OS-level network sandbox. Core execution is bounded
+by a 2-second adapter timeout. If no measurement input is supplied, the record
+stores `OMITTED`; if the adapter is unconfigured, fails, or times out, it stores
+`ERROR` with null ARI/drift and the measurement-input digest. None of these
+measurement states changes the existing Rust policy decision.
+
+New entries use `aura-guard.audit.v2`. Their `core_measurement` object is
+serialized as compact JSON in declared field order and appended to the v1 chain
+preimage using a byte-length prefix before SHA-256. Historical v1 entries without
+this field retain their original preimage and remain replay-verifiable.
+`aura-replay` rejects a changed measurement value when the original `chain_hash`
+is retained. This is an engineering integration contract, not a claim of protocol
+normative approval or conformance.
+
+---
+
 ## API surface
 
 | Method | Path | Auth | Description |

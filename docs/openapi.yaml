@@ -88,26 +88,84 @@ components:
           properties:
             prompt: { type: string }
             response: { type: string }
+        measurement_input:
+          description: Optional pre-normalized fixed-point input for the configured AURA Core Python adapter. Omission keeps the text-policy-only flow.
+          type: object
+          required: [vector, valid_schema]
+          properties:
+            vector:
+              type: array
+              minItems: 1
+              maxItems: 4096
+              items:
+                type: integer
+                format: int32
+                minimum: -2147483648
+                maximum: 2147483647
+            valid_schema:
+              type: boolean
+          additionalProperties: false
     AuditEntry:
       type: object
-      required: [schema, seq, audit_id, timestamp, decision, policy_set,
-                 policy_hash, context, input_hash, shadow_hash, prev_hash,
-                 chain_hash, violations]
+      required:
+        - schema
+        - seq
+        - audit_id
+        - timestamp
+        - decision
+        - policy_set
+        - policy_hash
+        - context
+        - input_hash
+        - shadow_hash
+        - core_measurement
+        - prev_hash
+        - chain_hash
+        - violations
       properties:
-        schema: { type: string, example: 'aura-guard.audit.v1' }
+        schema:
+          type: string
+          enum: ['aura-guard.audit.v2']
+          example: 'aura-guard.audit.v2'
         seq: { type: integer, format: int64 }
         audit_id: { type: string, format: uuid }
+        request_id: { type: string, nullable: true }
         timestamp: { type: string, format: date-time }
         decision:
           type: string
           enum: [ALLOW, REVIEW, DENY]
         policy_set: { type: string }
-        policy_hash: { type: string, description: 'SHA-256 of the YAML policy bytes' }
+        policy_hash:
+          type: string
+          description: SHA-256 of the YAML policy bytes
         context: { type: string }
-        input_hash: { type: string, description: 'SHA-256 of context + prompt + response' }
-        shadow_hash: { type: string, description: 'SHA-256 of the SHADOW-normalized input' }
+        input_hash:
+          type: string
+          description: SHA-256 of context + prompt + response
+        shadow_hash:
+          type: string
+          description: SHA-256 of the SHADOW-normalized input
+        core_measurement:
+          type: object
+          description: Optional Core evaluator result, explicit omission, or adapter error. This block is included in the v2 chain-hash preimage.
+          required: [status, ari, drift, evaluator_version, measurement_input_hash]
+          properties:
+            status:
+              type: string
+              enum: [COMPLETED, OMITTED, ERROR]
+            ari: { type: integer, format: int64, nullable: true }
+            drift: { type: integer, format: int64, nullable: true }
+            evaluator_version: { type: string, minLength: 1, example: 'core-v3.3' }
+            measurement_input_hash:
+              type: string
+              nullable: true
+              pattern: '^[a-f0-9]{64}$'
+              description: SHA-256 of compact measurement input JSON; null for OMITTED.
+          additionalProperties: false
         prev_hash: { type: string }
-        chain_hash: { type: string }
+        chain_hash:
+          type: string
+          description: SHA-256 of the existing v1 preimage plus a length-prefixed compact core_measurement JSON block for aura-guard.audit.v2.
         violations:
           type: array
           items:
