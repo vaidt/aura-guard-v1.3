@@ -188,6 +188,25 @@ async fn request_measurement_is_hashed_and_ari_tampering_is_rejected() {
             "response": "The account activity is within the normal operating range."
         }
     });
+    let mut malformed_request = base_request.clone();
+    malformed_request["measurement_input"] = json!({
+        "vector": [],
+        "valid_schema": true
+    });
+    let (malformed_status, malformed_body) =
+        post_json(app.clone(), malformed_request, "gate3-empty-vector").await;
+    assert_eq!(
+        malformed_status,
+        StatusCode::BAD_REQUEST,
+        "empty vector must be rejected before evaluation: {malformed_body}"
+    );
+    assert!(
+        fs::read_to_string(&log_path)
+            .expect("read log after invalid request")
+            .is_empty(),
+        "invalid measurement request must not create an audit record"
+    );
+
     let (omitted_status, omitted_entry) =
         post_json(app.clone(), base_request.clone(), "gate3-omitted").await;
     assert_eq!(omitted_status, StatusCode::OK, "body={omitted_entry}");
