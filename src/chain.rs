@@ -118,10 +118,7 @@ pub fn chain_preimage_with_measurement(
     );
     let measurement_json = serde_json::to_string(core_measurement)
         .expect("CoreMeasurement serialization has only infallible scalar fields");
-    format!(
-        "{base}{SEP}{}:{measurement_json}",
-        measurement_json.len()
-    )
+    format!("{base}{SEP}{}:{measurement_json}", measurement_json.len())
 }
 
 /// Compute the v2 chain digest, including the complete Core measurement block.
