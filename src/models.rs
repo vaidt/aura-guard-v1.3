@@ -106,7 +106,10 @@ impl CoreMeasurement {
             CoreMeasurementStatus::Error => {
                 self.ari.is_none()
                     && self.drift.is_none()
-                    && self.measurement_input_hash.as_ref().is_some_and(|h| is_sha256_hex(h))
+                    && self
+                        .measurement_input_hash
+                        .as_ref()
+                        .is_some_and(|h| is_sha256_hex(h))
             }
         };
         status_fields_match && !self.evaluator_version.trim().is_empty()
