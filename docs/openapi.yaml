@@ -102,7 +102,7 @@ components:
     AuditEntry:
       type: object
       required: [schema, seq, audit_id, timestamp, decision, policy_set,
-                 policy_hash, context, input_hash, shadow_hash, prev_hash,
+                 policy_hash, context, input_hash, shadow_hash, core_measurement, prev_hash,
                  chain_hash, violations]
       properties:
         schema: { type: string, enum: ['aura-guard.audit.v1', 'aura-guard.audit.v2'], example: 'aura-guard.audit.v2' }
