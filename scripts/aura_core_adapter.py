@@ -20,6 +20,8 @@ def require_int_vector(value: object, label: str) -> list[int]:
         raise ValueError(f"{label} must be a non-empty JSON array")
     if any(type(item) is not int for item in value):
         raise ValueError(f"{label} must contain only JSON integers")
+    if any(item < -(2**31) or item > (2**31 - 1) for item in value):
+        raise ValueError(f"{label} values must fit signed int32")
     return value
 
 
