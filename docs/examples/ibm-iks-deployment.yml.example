@@ -1,3 +1,11 @@
+# ARCHIVED EXAMPLE — NOT AN ACTIVE GITHUB ACTIONS WORKFLOW.
+#
+# This file is intentionally stored outside .github/workflows so it cannot run.
+# It is retained as a historical template only, not as an approved deployment
+# target for Aura-Guard v1.3. It contains placeholder IBM Cloud settings and
+# must not be activated without a separate architecture/configuration decision.
+#
+# Original workflow follows:
 # This workflow will build a docker container, publish it to IBM Container Registry, and deploy it to IKS when there is a push to the "main" branch.
 #
 # To configure this workflow:

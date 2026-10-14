@@ -21,6 +21,28 @@ The runtime intentionally does **not** terminate TLS itself in v1.3 —
 delegate that to your existing edge (nginx, Envoy, Caddy, AWS ALB,
 Cloudflare). mTLS termination inside the runtime is roadmap v1.4.
 
+## Deployment target decision: IBM Cloud IKS example
+
+The IBM Cloud / IKS GitHub Actions workflow is **disabled and archived**.
+It was a template rather than a configured deployment target: it triggers on
+every push to `main`, requires IBM Cloud secrets that are not part of this
+repository's local deployment contract, and contains the placeholder cluster
+`example-iks-cluster-name-or-id` plus example image/deployment names.
+
+Aura-Guard v1.3's documented deployment paths are operator-managed Docker or
+systemd deployments. Kubernetes may be used when separately configured by an
+operator, but this repository does not select IBM Cloud or authorize automatic
+cloud publication/deployment as part of its default pipeline. The archived
+template is retained at
+[`docs/examples/ibm-iks-deployment.yml.example`](examples/ibm-iks-deployment.yml.example)
+for historical reference only. The `.yml.example` file is outside
+`.github/workflows` and is not discovered or run as a GitHub Actions workflow.
+
+Reactivation requires a separate, explicit architecture and operations decision
+covering the target cluster, registry/namespace, secret ownership, deployment
+authorization, rollback, and runtime data persistence. Until then, no IBM Cloud
+deployment is implied or authorized by pushes to `main`.
+
 ## Docker
 
 The shipped `deploy/Dockerfile` is a distroless multi-stage build (Rust
