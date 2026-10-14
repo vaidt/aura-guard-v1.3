@@ -25,6 +25,7 @@ pub struct AuditRequest {
 
 /// Optional input forwarded to the configured AURA Core adapter.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct MeasurementInput {
     /// Pre-normalized integer vector, scaled by the Core's fixed-point factor.
     pub vector: Vec<i32>,
@@ -50,6 +51,7 @@ pub enum CoreMeasurementStatus {
 /// hashing. measurement_input_hash binds the result (or error) to the exact
 /// canonical JSON representation of the requested vector and schema flag.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct CoreMeasurement {
     pub status: CoreMeasurementStatus,
     pub ari: Option<i64>,
