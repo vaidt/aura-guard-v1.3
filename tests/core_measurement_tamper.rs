@@ -96,7 +96,10 @@ fn aura_replay_rejects_ari_mutation_from_100000_to_99999() {
     tampered["core_measurement"]["ari"] = serde_json::json!(99999);
     fs::write(
         &log,
-        format!("{}\n", serde_json::to_string(&tampered).expect("serialize tampered entry")),
+        format!(
+            "{}\n",
+            serde_json::to_string(&tampered).expect("serialize tampered entry")
+        ),
     )
     .expect("write tampered audit log");
 
