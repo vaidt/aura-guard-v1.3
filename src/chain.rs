@@ -92,6 +92,7 @@ pub fn compute_chain_hash(
 /// struct with fixed field order and no maps or floating-point members.
 #[must_use]
 #[allow(clippy::too_many_arguments)]
+#[allow(clippy::expect_used)]
 pub fn chain_preimage_with_measurement(
     prev_hash: &str,
     decision: &str,
