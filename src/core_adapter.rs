@@ -136,7 +136,7 @@ mod tests {
     use super::*;
     use crate::models::MeasurementInput;
     use std::fs;
-        use tempfile::tempdir;
+    use tempfile::tempdir;
 
     static ENV_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
