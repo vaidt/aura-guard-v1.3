@@ -21,11 +21,15 @@ pub const MAX_MEASUREMENT_VECTOR_DIMENSION: usize = 4096;
 
 const PYTHON_ADAPTER: &str = include_str!("../scripts/aura_core_adapter.py");
 
+/// Validated result returned by the one-shot Python adapter.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CoreAdapterOutput {
+    /// Raw integer ARI returned by PoCAEvaluator.
     pub ari: i64,
+    /// Raw integer drift returned by PoCAEvaluator.
     pub drift: i64,
+    /// Explicit version label for the evaluator that ran.
     pub evaluator_version: String,
 }
 
