@@ -118,7 +118,8 @@ assert response["schema"] == "aura-guard.audit.v2", response
 assert response["decision"] == "ALLOW", response.get("decision")
 assert response["policy_set"] == request["policy_set"]
 assert response["context"] == request["context"]
-assert response["seq"] == 1
+# The audit log allocates zero-based sequence numbers; the fresh log begins at seq=0.
+assert response["seq"] == 0
 assert response["request_id"] == "gate4-external-black-box"
 assert response["core_measurement"]["status"] == "COMPLETED"
 assert response["core_measurement"]["ari"] == 100000
