@@ -129,3 +129,104 @@ pub async fn evaluate(input: &MeasurementInput) -> Result<CoreAdapterOutput, Str
     }
     Ok(result)
 }
+
+#[cfg(test)]
+#[allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
+mod tests {
+    use super::*;
+    use crate::models::MeasurementInput;
+    use std::fs;
+    use std::sync::Mutex;
+    use tempfile::tempdir;
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    struct RestoreEnv(Vec<(&'static str, Option<std::ffi::OsString>)>);
+
+    impl Drop for RestoreEnv {
+        fn drop(&mut self) {
+            for (key, value) in self.0.drain(..) {
+                if let Some(value) = value {
+                    std::env::set_var(key, value);
+                } else {
+                    std::env::remove_var(key);
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn invokes_configured_python_core_and_returns_integer_measures() {
+        let _lock = ENV_LOCK.lock().expect("serialize environment-mutating test");
+        let temp = tempdir().expect("create fake Core repository");
+        let core_dir = temp.path().join("core");
+        fs::create_dir_all(&core_dir).expect("create core package");
+        fs::write(
+            core_dir.join("evaluator.py"),
+            r#"
+class PoCAEvaluator:
+    def __init__(self, constitution):
+        self.constitution = constitution
+    def evaluate(self, agent_id, vector, valid_schema):
+        if len(vector) != len(self.constitution):
+            raise ValueError('vector dimension mismatch')
+        if not valid_schema:
+            return {'ari': 0, 'drift': 100000}
+        return {'ari': 100000, 'drift': 0}
+"#,
+        )
+        .expect("write fake Core evaluator");
+
+        let keys = [
+            "AURA_CORE_PATH",
+            "AURA_CORE_CONSTITUTION_VECTOR",
+            "AURA_CORE_PYTHON",
+            "AURA_CORE_VERSION",
+        ];
+        let _restore = RestoreEnv(
+            keys.iter()
+                .map(|key| (*key, std::env::var_os(key)))
+                .collect(),
+        );
+        std::env::set_var("AURA_CORE_PATH", temp.path());
+        std::env::set_var("AURA_CORE_CONSTITUTION_VECTOR", "[100000,0,0,0]");
+        std::env::set_var("AURA_CORE_PYTHON", "python3");
+        std::env::set_var("AURA_CORE_VERSION", "core-v3.3-test");
+
+        let input = MeasurementInput {
+            vector: vec![100000, 0, 0, 0],
+            valid_schema: true,
+        };
+        let result = evaluate(&input).await.expect("configured adapter should succeed");
+        assert_eq!(result.ari, 100000);
+        assert_eq!(result.drift, 0);
+        assert_eq!(result.evaluator_version, "core-v3.3-test");
+
+        let invalid_schema = MeasurementInput {
+            vector: vec![100000, 0, 0, 0],
+            valid_schema: false,
+        };
+        let result = evaluate(&invalid_schema)
+            .await
+            .expect("Core should return a measurement for invalid-schema observation");
+        assert_eq!(result.ari, 0);
+        assert_eq!(result.drift, 100000);
+    }
+
+    #[test]
+    fn measurement_input_hash_binds_vector_and_schema_flag() {
+        let input = MeasurementInput {
+            vector: vec![100000, 0, 0, 0],
+            valid_schema: true,
+        };
+        let expected = sha256_hex("{\"vector\":[100000,0,0,0],\"valid_schema\":true}");
+        assert_eq!(measurement_input_hash(&input), expected);
+        assert_ne!(
+            measurement_input_hash(&input),
+            measurement_input_hash(&MeasurementInput {
+                vector: vec![100000, 0, 0, 1],
+                valid_schema: true,
+            })
+        );
+    }
+}
