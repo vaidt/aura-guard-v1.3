@@ -95,7 +95,10 @@ impl CoreMeasurement {
             CoreMeasurementStatus::Completed => {
                 self.ari.is_some()
                     && self.drift.is_some()
-                    && self.measurement_input_hash.as_ref().is_some_and(|h| is_sha256_hex(h))
+                    && self
+                        .measurement_input_hash
+                        .as_ref()
+                        .is_some_and(|h| is_sha256_hex(h))
             }
             CoreMeasurementStatus::Omitted => {
                 self.ari.is_none() && self.drift.is_none() && self.measurement_input_hash.is_none()
@@ -111,7 +114,10 @@ impl CoreMeasurement {
 }
 
 fn is_sha256_hex(value: &str) -> bool {
-    value.len() == 64 && value.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
 }
 
 /// Prompt / response pair being audited.
