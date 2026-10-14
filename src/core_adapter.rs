@@ -5,6 +5,7 @@
 //! measurement while leaving the existing text-policy decision path unchanged.
 
 use std::process::Stdio;
+use std::time::Duration;
 
 use serde::Deserialize;
 use tokio::io::AsyncWriteExt;
@@ -18,6 +19,9 @@ pub const DEFAULT_CORE_VERSION: &str = "core-v3.3";
 
 /// Bound the incoming vector before starting an external process.
 pub const MAX_MEASUREMENT_VECTOR_DIMENSION: usize = 4096;
+
+/// Bound the optional measurement's latency so it cannot consume the full HTTP timeout.
+pub const CORE_ADAPTER_TIMEOUT: Duration = Duration::from_secs(2);
 
 const PYTHON_ADAPTER: &str = include_str!("../scripts/aura_core_adapter.py");
 
@@ -108,9 +112,9 @@ pub async fn evaluate(input: &MeasurementInput) -> Result<CoreAdapterOutput, Str
         .map_err(|error| format!("cannot send measurement input to Core adapter: {error}"))?;
     drop(stdin);
 
-    let output = child
-        .wait_with_output()
+    let output = tokio::time::timeout(CORE_ADAPTER_TIMEOUT, child.wait_with_output())
         .await
+        .map_err(|_| "Python Core adapter timed out after 2 seconds".to_string())?
         .map_err(|error| format!("cannot wait for Python Core adapter: {error}"))?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
