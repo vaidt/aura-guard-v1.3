@@ -177,11 +177,13 @@ export AURA_CORE_VERSION=core-v3.3    # optional label
 ```
 
 `AURA_CORE_PATH` must contain `core/evaluator.py`. The configured constitution
-vector and each request vector must have matching dimensions. Calls use a local
-Python process without shell interpolation or network access. If no measurement
-input is supplied, the record stores `OMITTED`; if the adapter is unconfigured or
-fails, it stores `ERROR` with null ARI/drift and the measurement-input digest.
-Neither condition changes the existing policy decision.
+vector and each request vector must have matching dimensions. The adapter
+starts a local Python process without shell interpolation and does not itself make
+network calls; this is not an OS-level network sandbox. Core execution is bounded
+by a 2-second adapter timeout. If no measurement input is supplied, the record
+stores `OMITTED`; if the adapter is unconfigured, fails, or times out, it stores
+`ERROR` with null ARI/drift and the measurement-input digest. None of these
+measurement states changes the existing Rust policy decision.
 
 New entries use `aura-guard.audit.v2`. Their `core_measurement` object is
 serialized as compact JSON in declared field order and appended to the v1 chain
