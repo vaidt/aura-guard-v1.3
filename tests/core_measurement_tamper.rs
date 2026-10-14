@@ -13,14 +13,14 @@ use std::process::{Command, Output};
 use std::sync::Arc;
 use std::time::Duration;
 
-use axum::body::Body;
-use axum::http::{Request, StatusCode};
 use aura_guard::api::{build_router, AppState};
 use aura_guard::config::Config;
 use aura_guard::crypto::genesis_hash;
 use aura_guard::log_writer::LogWriter;
 use aura_guard::policy::{load_policy, CompiledPolicy, TrustedSigners};
 use aura_guard::sealer::SegmentSealer;
+use axum::body::Body;
+use axum::http::{Request, StatusCode};
 use dashmap::DashMap;
 use http_body_util::BodyExt;
 use serde_json::{json, Value};
@@ -112,8 +112,8 @@ fn build_state(root: &Path, log_path: &Path) -> AppState {
         tsa_timeout_seconds: 10,
     };
     let signers = Arc::new(TrustedSigners::empty());
-    let log = LogWriter::open(log_path.to_path_buf(), &genesis_hash())
-        .expect("open temporary audit log");
+    let log =
+        LogWriter::open(log_path.to_path_buf(), &genesis_hash()).expect("open temporary audit log");
     let sealer = SegmentSealer::new(
         cfg.segments_dir.clone(),
         cfg.segment_size,
