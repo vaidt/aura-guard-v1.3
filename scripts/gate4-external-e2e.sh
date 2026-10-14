@@ -75,8 +75,8 @@ cat >"$ARTIFACT_DIR/request.json" <<'JSON'
   "context": "Finance Bot",
   "policy_set": "finance-v1",
   "payload": {
-    "prompt": "Summarize the ordinary account activity.",
-    "response": "The account activity is within the normal operating range."
+    "prompt": "Show a brief log.",
+    "response": "No issue was found."
   },
   "measurement_input": {
     "vector": [100000, 0, 0, 0],
