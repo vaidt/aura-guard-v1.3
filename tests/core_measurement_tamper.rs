@@ -262,7 +262,16 @@ async fn request_measurement_is_hashed_and_ari_tampering_is_rejected() {
 
     // Mutate the exact persisted ARI while retaining the original chain_hash.
     let mut tampered: Value = serde_json::from_str(&lines[1]).expect("parse recorded line");
+    let original_chain_hash = tampered["chain_hash"]
+        .as_str()
+        .expect("recorded chain_hash present")
+        .to_string();
+    assert_eq!(tampered["core_measurement"]["ari"], 100000);
     tampered["core_measurement"]["ari"] = json!(99999);
+    assert_eq!(tampered["chain_hash"], original_chain_hash);
+    println!(
+        "TAMPER PROBE: core_measurement.ari 100000 -> 99999; original chain_hash retained ({original_chain_hash})"
+    );
     lines[1] = serde_json::to_string(&tampered).expect("serialize tampered measurement record");
     fs::write(&log_path, format!("{}\n", lines.join("\n"))).expect("persist tampered log");
 
@@ -275,6 +284,11 @@ async fn request_measurement_is_hashed_and_ari_tampering_is_rejected() {
         String::from_utf8_lossy(&rejected.stderr)
     );
     let stderr = String::from_utf8_lossy(&rejected.stderr);
+    println!(
+        "TAMPER PROBE RESULT: aura-replay exit={:?}; {}",
+        rejected.status.code(),
+        stderr.trim()
+    );
     assert!(
         stderr.contains("CHAIN BREAK DETECTED at entry #1"),
         "expected a chain-break refusal for the measured record, got: {stderr}"
