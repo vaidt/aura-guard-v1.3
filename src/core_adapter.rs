@@ -136,10 +136,9 @@ mod tests {
     use super::*;
     use crate::models::MeasurementInput;
     use std::fs;
-    use std::sync::Mutex;
-    use tempfile::tempdir;
+        use tempfile::tempdir;
 
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
+    static ENV_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
     struct RestoreEnv(Vec<(&'static str, Option<std::ffi::OsString>)>);
 
@@ -157,7 +156,7 @@ mod tests {
 
     #[tokio::test]
     async fn invokes_configured_python_core_and_returns_integer_measures() {
-        let _lock = ENV_LOCK.lock().expect("serialize environment-mutating test");
+        let _lock = ENV_LOCK.lock().await;
         let temp = tempdir().expect("create fake Core repository");
         let core_dir = temp.path().join("core");
         fs::create_dir_all(&core_dir).expect("create core package");
@@ -197,7 +196,9 @@ class PoCAEvaluator:
             vector: vec![100000, 0, 0, 0],
             valid_schema: true,
         };
-        let result = evaluate(&input).await.expect("configured adapter should succeed");
+        let result = evaluate(&input)
+            .await
+            .expect("configured adapter should succeed");
         assert_eq!(result.ari, 100000);
         assert_eq!(result.drift, 0);
         assert_eq!(result.evaluator_version, "core-v3.3-test");
