@@ -12,6 +12,7 @@ use crate::api::AppState;
 use crate::chain::compute_chain_hash_with_measurement;
 use crate::core_adapter::{
     configured_evaluator_version, evaluate as evaluate_core, measurement_input_hash,
+    MAX_MEASUREMENT_VECTOR_DIMENSION,
 };
 use crate::crypto::sha256_hex;
 use crate::engine::evaluate;
@@ -74,6 +75,21 @@ pub async fn handle_audit(
             StatusCode::SERVICE_UNAVAILABLE,
             "audit log halted (fail-closed posture)".into(),
         ));
+    }
+
+    // Validate API-level vector shape before policy evaluation or any append.
+    // A mismatch against the configured Core constitution is a separate adapter
+    // failure and remains passive; empty/oversized vectors violate this API contract.
+    if let Some(input) = req.measurement_input.as_ref() {
+        if input.vector.is_empty() || input.vector.len() > MAX_MEASUREMENT_VECTOR_DIMENSION {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                format!(
+                    "measurement_input.vector must contain 1..={} signed int32 values",
+                    MAX_MEASUREMENT_VECTOR_DIMENSION
+                ),
+            ));
+        }
     }
 
     let policy_set = req
