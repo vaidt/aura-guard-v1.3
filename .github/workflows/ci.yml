@@ -200,3 +200,39 @@ jobs:
             --workers 200 \
             --log logs/audit.jsonl \
             --replay target/release/aura-replay
+
+
+  # Gate 4: exercise the actual listening service from an external HTTP client,
+  # then inspect the persisted JSONL and independently verify its Merkle segment.
+  gate4-external-e2e:
+    name: Gate 4 external-client black-box E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Checkout pinned AURA Core evaluator
+        uses: actions/checkout@v4
+        with:
+          repository: vaidt/aura-poc-a-core-v3.3
+          ref: cdf9bbf2b8420732f85a77197ea753809edbb029
+          path: aura-poc-a-core-v3.3
+      - uses: dtolnay/rust-toolchain@1.86.0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: Swatinem/rust-cache@v2
+      - name: Run external HTTP -> Core -> JSONL -> aura-replay/Merkle scenario
+        env:
+          AURA_CORE_PATH: ${{ github.workspace }}/aura-poc-a-core-v3.3
+          AURA_CORE_CONSTITUTION_VECTOR: '[100000,0,0,0]'
+          AURA_CORE_VERSION: 'core-v3.3+cdf9bbf2b842'
+          AURA_CORE_PYTHON: python3
+        run: bash scripts/gate4-external-e2e.sh
+      - name: Preserve Gate 4 execution evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gate4-external-e2e-evidence
+          path: artifacts/gate4/
+          if-no-files-found: warn
+          retention-days: 14
