@@ -62,7 +62,6 @@ pub struct CoreMeasurement {
     /// Configured evaluator label used to interpret the result.
     pub evaluator_version: String,
     /// SHA-256 of compact measurement-input JSON; null for OMITTED.
-    #[serde(default)]
     pub measurement_input_hash: Option<String>,
 }
 
