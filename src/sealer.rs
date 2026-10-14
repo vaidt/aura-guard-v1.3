@@ -404,6 +404,7 @@ mod tests {
             context: "ctx".into(),
             input_hash: format!("input-{seq}"),
             shadow_hash: format!("shadow-{seq}"),
+            core_measurement: None,
             violations: vec![],
             prev_hash: prev.into(),
             chain_hash: String::new(),
