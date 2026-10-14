@@ -12,7 +12,7 @@
 //! field — *or with the order of records* — breaks the chain.
 
 use crate::crypto::{genesis_hash, sha256_hex};
-use crate::models::AuditEntry;
+use crate::models::{AuditEntry, CoreMeasurement};
 use crate::{AuraError, Result};
 
 /// Field separator used inside the chain digest. Must never overlap with hex,
@@ -84,20 +84,106 @@ pub fn compute_chain_hash(
     sha256_hex(&canonical)
 }
 
+/// Build the v2 chain preimage by appending a length-prefixed compact JSON
+/// representation of the Core measurement to the established v1 preimage.
+///
+/// Length-prefixing makes the new trailing component unambiguous even if its
+/// string field contains separator characters. The JSON is serialized from a
+/// struct with fixed field order and no maps or floating-point members.
+#[must_use]
+#[allow(clippy::too_many_arguments)]
+pub fn chain_preimage_with_measurement(
+    prev_hash: &str,
+    decision: &str,
+    policy_set: &str,
+    policy_hash: &str,
+    context: &str,
+    input_hash: &str,
+    shadow_hash: &str,
+    seq: u64,
+    timestamp: &str,
+    core_measurement: &CoreMeasurement,
+) -> String {
+    let base = chain_preimage(
+        prev_hash,
+        decision,
+        policy_set,
+        policy_hash,
+        context,
+        input_hash,
+        shadow_hash,
+        seq,
+        timestamp,
+    );
+    let measurement_json = serde_json::to_string(core_measurement)
+        .expect("CoreMeasurement serialization has only infallible scalar fields");
+    format!(
+        "{base}{SEP}{}:{measurement_json}",
+        measurement_json.as_bytes().len()
+    )
+}
+
+/// Compute the v2 chain digest, including the complete Core measurement block.
+#[must_use]
+#[allow(clippy::too_many_arguments)]
+pub fn compute_chain_hash_with_measurement(
+    prev_hash: &str,
+    decision: &str,
+    policy_set: &str,
+    policy_hash: &str,
+    context: &str,
+    input_hash: &str,
+    shadow_hash: &str,
+    seq: u64,
+    timestamp: &str,
+    core_measurement: &CoreMeasurement,
+) -> String {
+    let preimage = chain_preimage_with_measurement(
+        prev_hash,
+        decision,
+        policy_set,
+        policy_hash,
+        context,
+        input_hash,
+        shadow_hash,
+        seq,
+        timestamp,
+        core_measurement,
+    );
+    sha256_hex(&preimage)
+}
+
 /// Recompute the chain digest for an existing entry (used by the replay CLI).
+/// Historical v1 records without core_measurement retain their original preimage;
+/// v2 records bind the compact measurement JSON into the hash.
 #[must_use]
 pub fn recompute_for_entry(entry: &AuditEntry) -> String {
-    compute_chain_hash(
-        &entry.prev_hash,
-        &entry.decision,
-        &entry.policy_set,
-        &entry.policy_hash,
-        &entry.context,
-        &entry.input_hash,
-        &entry.shadow_hash,
-        entry.seq,
-        &entry.timestamp,
-    )
+    if let Some(measurement) = &entry.core_measurement {
+        compute_chain_hash_with_measurement(
+            &entry.prev_hash,
+            &entry.decision,
+            &entry.policy_set,
+            &entry.policy_hash,
+            &entry.context,
+            &entry.input_hash,
+            &entry.shadow_hash,
+            entry.seq,
+            &entry.timestamp,
+            measurement,
+        )
+    } else {
+        compute_chain_hash(
+            &entry.prev_hash,
+            &entry.decision,
+            &entry.policy_set,
+            &entry.policy_hash,
+            &entry.context,
+            &entry.input_hash,
+            &entry.shadow_hash,
+            entry.seq,
+            &entry.timestamp,
+        )
+    }
 }
 
 /// Walk the chain and fail on the first broken link.
@@ -107,6 +193,22 @@ pub fn recompute_for_entry(entry: &AuditEntry) -> String {
 pub fn verify_chain(entries: &[AuditEntry]) -> Result<String> {
     let mut expected_prev = genesis_hash();
     for (i, entry) in entries.iter().enumerate() {
+        let schema_matches_measurement = match (entry.schema.as_str(), entry.core_measurement.as_ref()) {
+            ("aura-guard.audit.v1", None) => true,
+            ("aura-guard.audit.v2", Some(measurement)) => measurement.is_well_formed(),
+            _ => false,
+        };
+        if !schema_matches_measurement {
+            return Err(AuraError::ChainBreak {
+                index: i,
+                expected: "audit schema and core_measurement presence/status to agree".into(),
+                actual: format!(
+                    "schema={}, core_measurement_present={}",
+                    entry.schema,
+                    entry.core_measurement.is_some()
+                ),
+            });
+        }
         if entry.prev_hash != expected_prev {
             return Err(AuraError::ChainBreak {
                 index: i,
@@ -145,6 +247,7 @@ mod tests {
             context: "ctx".into(),
             input_hash: format!("input-{seq}"),
             shadow_hash: format!("shadow-{seq}"),
+            core_measurement: None,
             violations: vec![],
             prev_hash: prev.into(),
             chain_hash: String::new(),
