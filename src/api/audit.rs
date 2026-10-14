@@ -9,10 +9,13 @@ use std::time::Instant;
 use uuid::Uuid;
 
 use crate::api::AppState;
-use crate::chain::compute_chain_hash;
+use crate::chain::compute_chain_hash_with_measurement;
+use crate::core_adapter::{configured_evaluator_version, evaluate as evaluate_core, measurement_input_hash};
 use crate::crypto::sha256_hex;
 use crate::engine::evaluate;
-use crate::models::{AuditEntry, AuditRequest};
+use crate::models::{
+    AuditEntry, AuditRequest, CoreMeasurement, CoreMeasurementStatus,
+};
 use crate::normalizer::shadow_normalize;
 use crate::policy::CompiledPolicy;
 
@@ -109,7 +112,34 @@ pub async fn handle_audit(
     let input_hash = sha256_hex(&original);
     let shadow_hash = sha256_hex(&shadow);
 
-    // Evaluate.
+    // Optional AURA Core measurement. This is observational only: it is recorded
+    // in the protected chain payload but does not alter the existing Rust policy decision.
+    let core_measurement = if let Some(measurement_input) = req.measurement_input.as_ref() {
+        let measurement_input_hash = measurement_input_hash(measurement_input);
+        match evaluate_core(measurement_input).await {
+            Ok(result) => CoreMeasurement {
+                status: CoreMeasurementStatus::Completed,
+                ari: Some(result.ari),
+                drift: Some(result.drift),
+                evaluator_version: result.evaluator_version,
+                measurement_input_hash: Some(measurement_input_hash),
+            },
+            Err(error) => {
+                tracing::error!(
+                    error = %error,
+                    audit_id = %audit_id,
+                    request_id = ?request_id,
+                    "AURA Core measurement failed; retaining policy-only decision",
+                );
+                CoreMeasurement::error(configured_evaluator_version(), measurement_input_hash)
+            }
+        }
+    } else {
+        CoreMeasurement::omitted(configured_evaluator_version())
+    };
+
+    // Evaluate using the existing Rust policy engine only. ARI/drift are passive
+    // evidence until a separately defined policy integration consumes them.
     let (decision, violations) = evaluate(&shadow, &req.context, &policy.rules);
 
     // Chain construction and durable append are one serialized operation.
@@ -125,7 +155,7 @@ pub async fn handle_audit(
         .append_with_observer(
             |seq, prev_hash| {
                 let timestamp = Utc::now().to_rfc3339();
-                let chain_hash = compute_chain_hash(
+                let chain_hash = compute_chain_hash_with_measurement(
                     prev_hash,
                     &decision,
                     &policy.name,
@@ -135,10 +165,11 @@ pub async fn handle_audit(
                     &shadow_hash,
                     seq,
                     &timestamp,
+                    &core_measurement,
                 );
 
                 AuditEntry {
-                    schema: "aura-guard.audit.v1".into(),
+                    schema: "aura-guard.audit.v2".into(),
                     seq,
                     audit_id: audit_id.clone(),
                     request_id: request_id.clone(),
@@ -149,6 +180,7 @@ pub async fn handle_audit(
                     context: req.context.clone(),
                     input_hash: input_hash.clone(),
                     shadow_hash: shadow_hash.clone(),
+                    core_measurement: Some(core_measurement.clone()),
                     violations: violations.clone(),
                     prev_hash: prev_hash.to_string(),
                     chain_hash,
