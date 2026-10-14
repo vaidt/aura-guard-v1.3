@@ -10,12 +10,12 @@ use uuid::Uuid;
 
 use crate::api::AppState;
 use crate::chain::compute_chain_hash_with_measurement;
-use crate::core_adapter::{configured_evaluator_version, evaluate as evaluate_core, measurement_input_hash};
+use crate::core_adapter::{
+    configured_evaluator_version, evaluate as evaluate_core, measurement_input_hash,
+};
 use crate::crypto::sha256_hex;
 use crate::engine::evaluate;
-use crate::models::{
-    AuditEntry, AuditRequest, CoreMeasurement, CoreMeasurementStatus,
-};
+use crate::models::{AuditEntry, AuditRequest, CoreMeasurement, CoreMeasurementStatus};
 use crate::normalizer::shadow_normalize;
 use crate::policy::CompiledPolicy;
 
