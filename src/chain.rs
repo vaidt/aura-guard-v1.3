@@ -119,7 +119,7 @@ pub fn chain_preimage_with_measurement(
         .expect("CoreMeasurement serialization has only infallible scalar fields");
     format!(
         "{base}{SEP}{}:{measurement_json}",
-        measurement_json.as_bytes().len()
+        measurement_json.len()
     )
 }
 
@@ -193,11 +193,12 @@ pub fn recompute_for_entry(entry: &AuditEntry) -> String {
 pub fn verify_chain(entries: &[AuditEntry]) -> Result<String> {
     let mut expected_prev = genesis_hash();
     for (i, entry) in entries.iter().enumerate() {
-        let schema_matches_measurement = match (entry.schema.as_str(), entry.core_measurement.as_ref()) {
-            ("aura-guard.audit.v1", None) => true,
-            ("aura-guard.audit.v2", Some(measurement)) => measurement.is_well_formed(),
-            _ => false,
-        };
+        let schema_matches_measurement =
+            match (entry.schema.as_str(), entry.core_measurement.as_ref()) {
+                ("aura-guard.audit.v1", None) => true,
+                ("aura-guard.audit.v2", Some(measurement)) => measurement.is_well_formed(),
+                _ => false,
+            };
         if !schema_matches_measurement {
             return Err(AuraError::ChainBreak {
                 index: i,
