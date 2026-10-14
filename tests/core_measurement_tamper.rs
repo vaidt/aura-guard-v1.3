@@ -1,6 +1,6 @@
 //! End-to-end Gate 3 regression: API -> Core adapter -> JSONL/hash-chain -> replay.
 //!
-//! By default this test creates a minimal test-double Core interface, keeping `cargo test`
+//! By default this test creates a minimal test-double Core interface, keeping cargo test
 //! hermetic. CI may set AURA_CORE_PATH to the actual aura-poc-a-core-v3.3 checkout to
 //! exercise the real Python evaluator using the same test vectors.
 
@@ -193,14 +193,24 @@ async fn request_measurement_is_hashed_and_ari_tampering_is_rejected() {
     assert_eq!(measured_entry["core_measurement"]["status"], "COMPLETED");
     assert_eq!(measured_entry["core_measurement"]["ari"], 100000);
     assert_eq!(measured_entry["core_measurement"]["drift"], 0);
-    assert_eq!(measured_entry["core_measurement"]["evaluator_version"], env::var("AURA_CORE_VERSION").unwrap());
+    assert_eq!(
+        measured_entry["core_measurement"]["evaluator_version"],
+        env::var("AURA_CORE_VERSION").expect("version label is configured")
+    );
 
     let log_text = fs::read_to_string(&log_path).expect("read persisted JSONL");
     let mut lines: Vec<String> = log_text.lines().map(str::to_string).collect();
     assert_eq!(lines.len(), 2, "both requests must be durably logged");
-    let recorded: Value = serde_json::from_str(&lines[1]).expect("parse persisted measurement record");
+    let recorded: Value =
+        serde_json::from_str(&lines[1]).expect("parse persisted measurement record");
     assert_eq!(recorded["core_measurement"]["ari"], 100000);
-    assert_eq!(recorded["core_measurement"]["measurement_input_hash"].as_str().unwrap().len(), 64);
+    assert_eq!(
+        recorded["core_measurement"]["measurement_input_hash"]
+            .as_str()
+            .expect("measurement input hash present")
+            .len(),
+        64
+    );
 
     let clean = replay(&log_path);
     assert!(
