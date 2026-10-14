@@ -11,6 +11,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::sync::Arc;
+use std::time::Duration;
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
@@ -19,6 +20,7 @@ use aura_guard::config::Config;
 use aura_guard::crypto::genesis_hash;
 use aura_guard::log_writer::LogWriter;
 use aura_guard::policy::{load_policy, CompiledPolicy, TrustedSigners};
+use aura_guard::sealer::SegmentSealer;
 use dashmap::DashMap;
 use http_body_util::BodyExt;
 use serde_json::{json, Value};
@@ -104,7 +106,7 @@ fn build_state(root: &Path, log_path: &Path) -> AppState {
         metrics_enabled: true,
         allowed_origins: Vec::new(),
         segments_dir: root.join("segments"),
-        segment_size: 0,
+        segment_size: 2,
         segment_interval_seconds: 0,
         tsa_url: None,
         tsa_timeout_seconds: 10,
@@ -112,6 +114,15 @@ fn build_state(root: &Path, log_path: &Path) -> AppState {
     let signers = Arc::new(TrustedSigners::empty());
     let log = LogWriter::open(log_path.to_path_buf(), &genesis_hash())
         .expect("open temporary audit log");
+    let sealer = SegmentSealer::new(
+        cfg.segments_dir.clone(),
+        cfg.segment_size,
+        Duration::from_secs(cfg.segment_interval_seconds),
+    )
+    .expect("create test segment sealer");
+    sealer
+        .prime_from_log(log_path)
+        .expect("prime sealer from empty audit log");
     let policies: DashMap<String, Arc<CompiledPolicy>> = DashMap::new();
     for name in ["finance-v1", "medtech-v1", "hr-bias-v1"] {
         let policy = load_policy(name, &cfg.policies_dir, &signers, false)
@@ -124,7 +135,7 @@ fn build_state(root: &Path, log_path: &Path) -> AppState {
         log,
         signers,
         enforce_signatures: false,
-        sealer: None,
+        sealer: Some(sealer),
     }
 }
 
@@ -150,10 +161,13 @@ async fn post_json(app: axum::Router, body: Value, request_id: &str) -> (StatusC
     (status, json)
 }
 
-fn replay(log_path: &Path) -> Output {
+fn replay(log_path: &Path, segments_dir: &Path) -> Output {
     Command::new(env!("CARGO_BIN_EXE_aura-replay"))
         .arg("--log")
         .arg(log_path)
+        .arg("--verify-segments")
+        .arg("--segments-dir")
+        .arg(segments_dir)
         .arg("--json")
         .output()
         .expect("run aura-replay")
@@ -212,7 +226,7 @@ async fn request_measurement_is_hashed_and_ari_tampering_is_rejected() {
         64
     );
 
-    let clean = replay(&log_path);
+    let clean = replay(&log_path, &temp.path().join("segments"));
     assert!(
         clean.status.success(),
         "clean log did not verify: stdout={}, stderr={}",
@@ -224,6 +238,8 @@ async fn request_measurement_is_hashed_and_ari_tampering_is_rejected() {
     assert_eq!(clean_summary["status"], "ok");
     assert_eq!(clean_summary["entries"], 2);
     assert_eq!(clean_summary["core_measurements"], 2);
+    assert_eq!(clean_summary["verified_segments"], true);
+    assert_eq!(clean_summary["segments"], 1);
 
     // Mutate the exact persisted ARI while retaining the original chain_hash.
     let mut tampered: Value = serde_json::from_str(&lines[1]).expect("parse recorded line");
@@ -231,7 +247,7 @@ async fn request_measurement_is_hashed_and_ari_tampering_is_rejected() {
     lines[1] = serde_json::to_string(&tampered).expect("serialize tampered measurement record");
     fs::write(&log_path, format!("{}\n", lines.join("\n"))).expect("persist tampered log");
 
-    let rejected = replay(&log_path);
+    let rejected = replay(&log_path, &temp.path().join("segments"));
     assert_eq!(
         rejected.status.code(),
         Some(2),
