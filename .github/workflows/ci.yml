@@ -35,8 +35,16 @@ jobs:
   test:
     name: build + test
     runs-on: ubuntu-latest
+    env:
+      AURA_SPECIFICATION_ROOT: ${{ github.workspace }}/aura-specification
     steps:
       - uses: actions/checkout@v4
+      - name: Checkout pinned AURA specification fixture
+        uses: actions/checkout@v4
+        with:
+          repository: vaidt/aura-specification
+          ref: b3a6e784d9a6ea2e0b554310e3de80e7d13de859
+          path: aura-specification
       - uses: dtolnay/rust-toolchain@1.86.0
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --locked --release --all-targets
