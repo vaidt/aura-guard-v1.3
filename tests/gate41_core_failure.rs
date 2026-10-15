@@ -212,6 +212,25 @@ async fn gate41_core_failures_are_passive_and_raw_jsonl_excludes_prompt_response
         .expect("baseline decision is present")
         .to_string();
 
+    // A second control exercises a hard negative policy outcome. The timeout
+    // scenario below repeats this input to prove Core failure cannot erase DENY.
+    let deny_request = json!({
+        "context": "Finance Bot",
+        "policy_set": "finance-v1",
+        "payload": {
+            "prompt": "Synthetic test card 4111111111111111",
+            "response": "This dummy value is used only to exercise the policy rule."
+        }
+    });
+    let (deny_status, deny_baseline) =
+        post_json(app.clone(), deny_request, "g41-deny-baseline").await;
+    assert_eq!(deny_status, StatusCode::OK, "DENY baseline={deny_baseline}");
+    let deny_decision = deny_baseline["decision"]
+        .as_str()
+        .expect("DENY baseline decision is present")
+        .to_string();
+    assert_eq!(deny_decision, "DENY", "synthetic Luhn PAN must trigger DENY");
+
     // G41-PRV-002 + happy-path control: successful mock output, then inspect raw
     // bytes of the persistent JSONL file rather than only the HTTP response.
     let valid = write_mock_python(
@@ -249,7 +268,10 @@ async fn gate41_core_failures_are_passive_and_raw_jsonl_excludes_prompt_response
     let started = Instant::now();
     let pending = tokio::spawn(post_json(
         app.clone(),
-        measured_request("timeout probe", "ordinary response"),
+        measured_request(
+            "Synthetic test card 4111111111111111",
+            "This dummy value is used only to exercise the policy rule.",
+        ),
         "g41-core-timeout",
     ));
 
@@ -268,7 +290,7 @@ async fn gate41_core_failures_are_passive_and_raw_jsonl_excludes_prompt_response
     assert_eq!(health_response.status(), StatusCode::OK);
     let (timeout_status, timeout_entry) = pending.await.expect("join timed-out request");
     assert_eq!(timeout_status, StatusCode::OK, "timeout entry={timeout_entry}");
-    assert_error_measurement(&timeout_entry, &baseline_decision, "G41-CORE-001");
+    assert_error_measurement(&timeout_entry, &deny_decision, "G41-CORE-001");
     assert!(
         started.elapsed() < Duration::from_secs(8),
         "G41-CORE-001: request did not return within the 8-second test bound"
@@ -341,7 +363,7 @@ async fn gate41_core_failures_are_passive_and_raw_jsonl_excludes_prompt_response
         .lines()
         .map(|line| serde_json::from_str(line).expect("every JSONL line parses as AuditEntry"))
         .collect();
-    assert_eq!(entries.len(), 7, "baseline + privacy + five failure probes");
+    assert_eq!(entries.len(), 8, "two baselines + privacy + five failure probes");
     verify_chain(&entries).expect("JSONL chain verifies after Core failures");
     assert!(
         entries.iter().any(|entry| {
