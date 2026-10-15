@@ -110,7 +110,10 @@ fn canonical_003_ri_rs_matches_oracle_bytes_and_hash_domains() {
     );
 
     println!("CANONICAL-003 specification commit = {SPECIFICATION_COMMIT}");
-    println!("CANONICAL-003 fixture path          = {}", fixture_path.display());
+    println!(
+        "CANONICAL-003 fixture path          = {}",
+        fixture_path.display()
+    );
     println!("CANONICAL-003 fixture SHA-256       = {fixture_sha256}");
     println!("CANONICAL-003 canonical byte length = {}", actual.len());
     println!(
