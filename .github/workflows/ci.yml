@@ -48,6 +48,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.86.0
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --locked --release --all-targets
+      - name: Execute CANONICAL-003 and preserve byte/hash evidence
+        run: cargo test --locked --test canonical_003 -- --nocapture
       - run: cargo test --locked --all-targets
 
   # Gate 3: exercise the adapter against the real AURA Core Python repository.
