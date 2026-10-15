@@ -35,11 +35,21 @@ jobs:
   test:
     name: build + test
     runs-on: ubuntu-latest
+    env:
+      AURA_SPECIFICATION_ROOT: ${{ github.workspace }}/aura-specification
     steps:
       - uses: actions/checkout@v4
+      - name: Checkout pinned AURA specification fixture
+        uses: actions/checkout@v4
+        with:
+          repository: vaidt/aura-specification
+          ref: b3a6e784d9a6ea2e0b554310e3de80e7d13de859
+          path: aura-specification
       - uses: dtolnay/rust-toolchain@1.86.0
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --locked --release --all-targets
+      - name: Execute CANONICAL-003 and preserve byte/hash evidence
+        run: cargo test --locked --test canonical_003 -- --nocapture
       - run: cargo test --locked --all-targets
 
   # Gate 3: exercise the adapter against the real AURA Core Python repository.

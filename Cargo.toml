@@ -126,6 +126,11 @@ serde_json_canonicalizer = "=0.3.2"
 name = "canonical_001"
 path = "conformance/canonical/canonical_001.rs"
 
+# CANONICAL-003 conformance harness; reads pinned bytes from aura-specification.
+[[test]]
+name = "canonical_003"
+path = "conformance/canonical/canonical_003.rs"
+
 [lints.rust]
 unsafe_code = "forbid"
 missing_docs = "warn"
