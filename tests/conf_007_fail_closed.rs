@@ -76,11 +76,7 @@ fn audit_entry_count(log_path: &Path) -> usize {
     }
 }
 
-async fn post_raw(
-    app: axum::Router,
-    body: &str,
-    request_id: &str,
-) -> (StatusCode, String) {
+async fn post_raw(app: axum::Router, body: &str, request_id: &str) -> (StatusCode, String) {
     let request = Request::builder()
         .method(Method::POST)
         .uri("/v1/audit")
@@ -116,9 +112,7 @@ async fn conf007_fix_error_rejects_malformed_and_unregistered_requests_without_a
         .expect("fixture http_cases array")
     {
         let id = case["id"].as_str().expect("case id");
-        let body = case["request_body_raw"]
-            .as_str()
-            .expect("raw request body");
+        let body = case["request_body_raw"].as_str().expect("raw request body");
         let before = audit_entry_count(&log_path);
 
         let (status, response_body) = post_raw(app.clone(), body, id).await;
@@ -128,8 +122,7 @@ async fn conf007_fix_error_rejects_malformed_and_unregistered_requests_without_a
             "{id}: expected HTTP 4xx rejection; status={status}, body={response_body:?}"
         );
         assert!(
-            !response_body.contains("ALLOW")
-                && !response_body.contains("\"decision\""),
+            !response_body.contains("ALLOW") && !response_body.contains("\"decision\""),
             "{id}: rejected input must not receive a decision response: {response_body:?}"
         );
         let after = audit_entry_count(&log_path);
@@ -157,13 +150,8 @@ fn conf007_fix_error_rejects_unknown_policy_actions_at_load_time() {
     fs::write(temp.path().join("finance-v1.yaml"), policy_yaml)
         .expect("write invalid policy fixture");
 
-    let error = load_policy(
-        "finance-v1",
-        temp.path(),
-        &TrustedSigners::empty(),
-        false,
-    )
-    .expect_err("unknown decision action must not compile into a runtime policy");
+    let error = load_policy("finance-v1", temp.path(), &TrustedSigners::empty(), false)
+        .expect_err("unknown decision action must not compile into a runtime policy");
 
     assert!(
         error.to_string().contains("invalid policy action"),
