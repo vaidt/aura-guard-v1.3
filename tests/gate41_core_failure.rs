@@ -24,7 +24,6 @@ use axum::http::{Method, Request, StatusCode};
 use dashmap::DashMap;
 use http_body_util::BodyExt;
 use serde_json::{json, Value};
-use tempfile::TempDir;
 use tower::ServiceExt;
 
 const API_KEY: &str = "gate4.1-test-api-key-0123456789abcdef";
@@ -84,8 +83,8 @@ fn build_state(root: &Path, log_path: &Path) -> AppState {
         .expect("open temporary JSONL audit log");
     let policies: DashMap<String, Arc<CompiledPolicy>> = DashMap::new();
     for name in ["finance-v1", "medtech-v1", "hr-bias-v1"] {
-        let policy = load_policy(name, &cfg.policies_dir, &signers, false)
-            .expect("load local test policy");
+        let policy =
+            load_policy(name, &cfg.policies_dir, &signers, false).expect("load local test policy");
         policies.insert(name.to_string(), Arc::new(policy));
     }
 
@@ -138,11 +137,7 @@ fn plain_request() -> Value {
     })
 }
 
-async fn post_json(
-    app: axum::Router,
-    body: Value,
-    request_id: &str,
-) -> (StatusCode, Value) {
+async fn post_json(app: axum::Router, body: Value, request_id: &str) -> (StatusCode, Value) {
     let request = Request::builder()
         .method(Method::POST)
         .uri("/v1/audit")
@@ -171,8 +166,7 @@ fn assert_error_measurement(entry: &Value, baseline_decision: &str, scenario: &s
         "{scenario}: Core failure changed the policy decision: {entry}"
     );
     assert_eq!(
-        entry["core_measurement"]["status"],
-        "ERROR",
+        entry["core_measurement"]["status"], "ERROR",
         "{scenario}: failure was not recorded as ERROR: {entry}"
     );
     assert!(
@@ -200,12 +194,11 @@ async fn gate41_core_failures_are_passive_and_raw_jsonl_excludes_prompt_response
     env::set_var("AURA_CORE_VERSION", "core-v3.3-gate4.1-test");
 
     let log_path = temp.path().join("audit.jsonl");
-    let app = build_router(temp.path(), &log_path);
+    let app = build_router(build_state(temp.path(), &log_path));
 
     // Control: policy decision without measurement establishes the unchanged
     // text-policy result that every Core failure must preserve.
-    let (baseline_status, baseline) =
-        post_json(app.clone(), plain_request(), "g41-baseline").await;
+    let (baseline_status, baseline) = post_json(app.clone(), plain_request(), "g41-baseline").await;
     assert_eq!(baseline_status, StatusCode::OK, "baseline={baseline}");
     let baseline_decision = baseline["decision"]
         .as_str()
@@ -229,7 +222,10 @@ async fn gate41_core_failures_are_passive_and_raw_jsonl_excludes_prompt_response
         .as_str()
         .expect("DENY baseline decision is present")
         .to_string();
-    assert_eq!(deny_decision, "DENY", "synthetic Luhn PAN must trigger DENY");
+    assert_eq!(
+        deny_decision, "DENY",
+        "synthetic Luhn PAN must trigger DENY"
+    );
 
     // G41-PRV-002 + happy-path control: successful mock output, then inspect raw
     // bytes of the persistent JSONL file rather than only the HTTP response.
@@ -245,9 +241,16 @@ async fn gate41_core_failures_are_passive_and_raw_jsonl_excludes_prompt_response
         "g41-privacy-marker-scan",
     )
     .await;
-    assert_eq!(privacy_status, StatusCode::OK, "privacy entry={privacy_entry}");
+    assert_eq!(
+        privacy_status,
+        StatusCode::OK,
+        "privacy entry={privacy_entry}"
+    );
     assert_eq!(privacy_entry["core_measurement"]["status"], "COMPLETED");
-    assert_eq!(privacy_entry["decision"].as_str(), Some(baseline_decision.as_str()));
+    assert_eq!(
+        privacy_entry["decision"].as_str(),
+        Some(baseline_decision.as_str())
+    );
 
     let raw = fs::read(&log_path).expect("read raw JSONL bytes");
     for marker in [SECRET_PROMPT.as_bytes(), SECRET_RESPONSE.as_bytes()] {
@@ -257,8 +260,14 @@ async fn gate41_core_failures_are_passive_and_raw_jsonl_excludes_prompt_response
         );
     }
     let raw_text = String::from_utf8(raw.clone()).expect("JSONL is UTF-8");
-    assert!(!raw_text.contains("\"prompt\""), "prompt field found in JSONL");
-    assert!(!raw_text.contains("\"response\""), "response field found in JSONL");
+    assert!(
+        !raw_text.contains("\"prompt\""),
+        "prompt field found in JSONL"
+    );
+    assert!(
+        !raw_text.contains("\"response\""),
+        "response field found in JSONL"
+    );
 
     // G41-CORE-001: deterministic process timeout. The mocked executable directly
     // replaces itself with sleep; no socket, network, or external Core is used.
@@ -289,7 +298,11 @@ async fn gate41_core_failures_are_passive_and_raw_jsonl_excludes_prompt_response
         .expect("health route responds during Core timeout");
     assert_eq!(health_response.status(), StatusCode::OK);
     let (timeout_status, timeout_entry) = pending.await.expect("join timed-out request");
-    assert_eq!(timeout_status, StatusCode::OK, "timeout entry={timeout_entry}");
+    assert_eq!(
+        timeout_status,
+        StatusCode::OK,
+        "timeout entry={timeout_entry}"
+    );
     assert_error_measurement(&timeout_entry, &deny_decision, "G41-CORE-001");
     assert!(
         started.elapsed() < Duration::from_secs(8),
@@ -297,8 +310,11 @@ async fn gate41_core_failures_are_passive_and_raw_jsonl_excludes_prompt_response
     );
 
     // G41-CORE-003: syntactically broken JSON must not be accepted as a result.
-    let malformed_json =
-        write_mock_python(temp.path(), "mock-core-bad-json", r#"printf '%s\n' '{"ari":'"#);
+    let malformed_json = write_mock_python(
+        temp.path(),
+        "mock-core-bad-json",
+        r#"printf '%s\n' '{"ari":'"#,
+    );
     env::set_var("AURA_CORE_PYTHON", malformed_json);
     let (json_status, json_entry) = post_json(
         app.clone(),
@@ -306,7 +322,11 @@ async fn gate41_core_failures_are_passive_and_raw_jsonl_excludes_prompt_response
         "g41-core-malformed-json",
     )
     .await;
-    assert_eq!(json_status, StatusCode::OK, "malformed JSON entry={json_entry}");
+    assert_eq!(
+        json_status,
+        StatusCode::OK,
+        "malformed JSON entry={json_entry}"
+    );
     assert_error_measurement(&json_entry, &baseline_decision, "G41-CORE-003");
 
     // G41-CORE-004a: valid JSON with a required field missing is a schema error.
@@ -322,7 +342,11 @@ async fn gate41_core_failures_are_passive_and_raw_jsonl_excludes_prompt_response
         "g41-core-missing-field",
     )
     .await;
-    assert_eq!(missing_status, StatusCode::OK, "missing field entry={missing_entry}");
+    assert_eq!(
+        missing_status,
+        StatusCode::OK,
+        "missing field entry={missing_entry}"
+    );
     assert_error_measurement(&missing_entry, &baseline_decision, "G41-CORE-004a");
 
     // G41-CORE-004b: incorrect JSON types are rejected by the typed deserializer.
@@ -352,7 +376,11 @@ async fn gate41_core_failures_are_passive_and_raw_jsonl_excludes_prompt_response
         "g41-core-spawn-failure",
     )
     .await;
-    assert_eq!(spawn_status, StatusCode::OK, "spawn failure entry={spawn_entry}");
+    assert_eq!(
+        spawn_status,
+        StatusCode::OK,
+        "spawn failure entry={spawn_entry}"
+    );
     assert_error_measurement(&spawn_entry, &baseline_decision, "G41-CORE-002");
 
     // Every successful HTTP audit operation is persisted as a complete, replayable
@@ -363,7 +391,11 @@ async fn gate41_core_failures_are_passive_and_raw_jsonl_excludes_prompt_response
         .lines()
         .map(|line| serde_json::from_str(line).expect("every JSONL line parses as AuditEntry"))
         .collect();
-    assert_eq!(entries.len(), 8, "two baselines + privacy + five failure probes");
+    assert_eq!(
+        entries.len(),
+        8,
+        "two baselines + privacy + five failure probes"
+    );
     verify_chain(&entries).expect("JSONL chain verifies after Core failures");
     assert!(
         entries.iter().any(|entry| {
@@ -378,7 +410,9 @@ async fn gate41_core_failures_are_passive_and_raw_jsonl_excludes_prompt_response
     let final_raw = fs::read(&log_path).expect("read final JSONL binary");
     for marker in [SECRET_PROMPT.as_bytes(), SECRET_RESPONSE.as_bytes()] {
         assert!(
-            !final_raw.windows(marker.len()).any(|window| window == marker),
+            !final_raw
+                .windows(marker.len())
+                .any(|window| window == marker),
             "G41-PRV-002 FAIL: secret marker appeared after negative-path probes"
         );
     }
