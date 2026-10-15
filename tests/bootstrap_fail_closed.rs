@@ -113,12 +113,10 @@ fn refuses_to_start_when_trusted_signers_missing() {
     );
 }
 
-
 #[test]
 fn refuses_to_start_when_policy_action_is_invalid() {
-    let fixture: serde_json::Value =
-        serde_json::from_str(include_str!("fixtures/FIX-ERROR.json"))
-            .expect("FIX-ERROR fixture is valid JSON");
+    let fixture: serde_json::Value = serde_json::from_str(include_str!("fixtures/FIX-ERROR.json"))
+        .expect("FIX-ERROR fixture is valid JSON");
     let policy_case = &fixture["startup_cases"][0];
     let policy_yaml = policy_case["policy_yaml"]
         .as_str()
