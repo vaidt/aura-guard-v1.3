@@ -237,7 +237,7 @@ report = {
     "overall_pass": all(case["pass"] for case in cases) and final_count == 1,
 }
 (out / "FIX-ERROR-RESULT.json").write_text(
-    json.dumps(report, indent=2, sort_keys=True) + "\\n", encoding="utf-8"
+    json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8"
 )
 assert report["overall_pass"], json.dumps(report, indent=2, sort_keys=True)
 print("CONF-007 FIX-ERROR E2E: PASS")
