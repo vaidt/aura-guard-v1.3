@@ -8,6 +8,7 @@ ARTIFACT_DIR="$ROOT_DIR/artifacts/gate4"
 mkdir -p "$ARTIFACT_DIR"
 rm -f "$ARTIFACT_DIR/request.json" "$ARTIFACT_DIR/response.json" \
   "$ARTIFACT_DIR/replay.json" "$ARTIFACT_DIR/server.log" "$ARTIFACT_DIR/setup.log" \
+  "$ARTIFACT_DIR/FIX-ERROR-RESULT.json" "$ARTIFACT_DIR"/FIX-ERROR-*.response.txt \
   "$ARTIFACT_DIR/audit.jsonl"
 rm -rf "$ARTIFACT_DIR/segments"
 mkdir -p "$ARTIFACT_DIR/segments"
@@ -146,6 +147,103 @@ print(f"HTTP decision: {response['decision']}")
 print(f"core_measurement: status={response['core_measurement']['status']}, "
       f"ari={response['core_measurement']['ari']}, drift={response['core_measurement']['drift']}")
 print(f"JSONL entries: {len(lines)}; response matches persisted record: true")
+PY
+
+# CONF-007 / FIX-ERROR: send rejection cases over the real TCP listener after
+# the valid control has traversed the actual Python Core adapter. Rejected
+# requests must leave the durable JSONL bytes unchanged; no decision may leak.
+python3 - "$ROOT_DIR/tests/fixtures/FIX-ERROR.json" "$BASE_URL" "$API_KEY" "$ARTIFACT_DIR" <<'PY'
+import hashlib
+import json
+import pathlib
+import sys
+import urllib.error
+import urllib.request
+
+fixture_path = pathlib.Path(sys.argv[1])
+base_url = sys.argv[2]
+api_key = sys.argv[3]
+out = pathlib.Path(sys.argv[4])
+fixture_bytes = fixture_path.read_bytes()
+fixture = json.loads(fixture_bytes)
+log_path = out / "audit.jsonl"
+cases = []
+
+def log_state():
+    raw = log_path.read_bytes()
+    return len(raw.splitlines()), hashlib.sha256(raw).hexdigest()
+
+for case in fixture["http_cases"]:
+    before_count, before_sha = log_state()
+    request = urllib.request.Request(
+        base_url + "/v1/audit",
+        data=case["request_body_raw"].encode("utf-8"),
+        method="POST",
+        headers={
+            "Content-Type": "application/json",
+            "X-API-Key": api_key,
+            "X-Request-ID": case["id"],
+        },
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            status = response.status
+            body = response.read().decode("utf-8", errors="replace")
+    except urllib.error.HTTPError as response:
+        status = response.code
+        body = response.read().decode("utf-8", errors="replace")
+
+    response_path = out / f"{case['id']}.response.txt"
+    response_path.write_text(body, encoding="utf-8")
+    after_count, after_sha = log_state()
+    no_allow = "ALLOW" not in body and '"decision"' not in body
+    unchanged = before_count == after_count and before_sha == after_sha
+    passed = 400 <= status < 500 and no_allow and unchanged
+    result = {
+        "id": case["id"],
+        "scenario": case["scenario"],
+        "http_status": status,
+        "expected_status_class": case["expected"]["http_status_class"],
+        "decision_in_response": '"decision"' in body,
+        "allow_in_response": "ALLOW" in body,
+        "audit_entries_before": before_count,
+        "audit_entries_after": after_count,
+        "audit_sha256_before": before_sha,
+        "audit_sha256_after": after_sha,
+        "audit_bytes_unchanged": before_sha == after_sha,
+        "pass": passed,
+        "raw_response_file": response_path.name,
+    }
+    cases.append(result)
+    print(f"{case['id']}: {'PASS' if passed else 'FAIL'} "
+          f"(HTTP {status}, audit entries {before_count}->{after_count}, "
+          f"bytes_unchanged={before_sha == after_sha})")
+    if not passed:
+        raise AssertionError(f"CONF-007 failure: {json.dumps(result, sort_keys=True)}")
+
+final_count, final_sha = log_state()
+report = {
+    "fixture_id": fixture["fixture_id"],
+    "fixture_version": fixture["version"],
+    "fixture_sha256": hashlib.sha256(fixture_bytes).hexdigest(),
+    "execution_mode": "external HTTP/TCP -> Aura-Guard -> real Python Core control -> persistent JSONL",
+    "valid_control": {
+        "expected_core_measurement_status": "COMPLETED",
+        "audit_entries_before_negative_probes": 1
+    },
+    "cases": cases,
+    "final_audit_entries": final_count,
+    "final_audit_sha256": final_sha,
+    "overall_pass": all(case["pass"] for case in cases) and final_count == 1,
+}
+(out / "FIX-ERROR-RESULT.json").write_text(
+    json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+)
+assert report["overall_pass"], json.dumps(report, indent=2, sort_keys=True)
+print("CONF-007 FIX-ERROR E2E: PASS")
+print(f"FIX-ERROR fixture SHA-256: {report['fixture_sha256']}")
+print(f"Persisted entries after rejected requests: {final_count}")
+print(f"Audit log SHA-256 unchanged through all rejections: {final_sha}")
 PY
 
 "$ROOT_DIR/target/release/aura-replay" \

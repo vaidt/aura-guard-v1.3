@@ -1,0 +1,72 @@
+{
+  "fixture_id": "FIX-ERROR",
+  "version": "0.1",
+  "classification": "TEST VECTOR — NON-NORMATIVE",
+  "purpose": "Exercise fail-closed handling at the integrated Aura-Guard request/policy boundary without changing the AURA Core measurement contract.",
+  "expected_invariants": [
+    "Invalid requests are rejected before a policy decision is emitted.",
+    "Rejected requests do not append any JSONL audit record.",
+    "A missing policy never falls back to the configured default policy.",
+    "A policy with an unknown action is rejected during loading; unknown actions never silently become ALLOW."
+  ],
+  "http_cases": [
+    {
+      "id": "FIX-ERROR-001",
+      "scenario": "Malformed Payload — invalid JSON",
+      "request_body_raw": "{\"context\":",
+      "expected": {
+        "http_status_class": "4xx",
+        "decision": "ABSENT",
+        "audit_log_delta": 0,
+        "core_invocation": "NOT REACHED"
+      }
+    },
+    {
+      "id": "FIX-ERROR-002",
+      "scenario": "Malformed Payload — required response field missing",
+      "request_body_raw": "{\"context\":\"Finance Bot\",\"policy_set\":\"finance-v1\",\"payload\":{\"prompt\":\"fixture prompt only\"}}",
+      "expected": {
+        "http_status_class": "4xx",
+        "decision": "ABSENT",
+        "audit_log_delta": 0,
+        "core_invocation": "NOT REACHED"
+      }
+    },
+    {
+      "id": "FIX-ERROR-003",
+      "scenario": "Malformed Payload — empty measurement vector",
+      "request_body_raw": "{\"context\":\"Finance Bot\",\"policy_set\":\"finance-v1\",\"payload\":{\"prompt\":\"fixture prompt\",\"response\":\"fixture response\"},\"measurement_input\":{\"vector\":[],\"valid_schema\":true}}",
+      "expected": {
+        "http_status_class": "4xx",
+        "decision": "ABSENT",
+        "audit_log_delta": 0,
+        "core_invocation": "NOT REACHED"
+      }
+    },
+    {
+      "id": "FIX-ERROR-004",
+      "scenario": "Missing Policy — policy_set is not registered",
+      "request_body_raw": "{\"context\":\"Finance Bot\",\"policy_set\":\"FIX-ERROR-NOT-REGISTERED\",\"payload\":{\"prompt\":\"fixture prompt\",\"response\":\"fixture response\"},\"measurement_input\":{\"vector\":[100000,0,0,0],\"valid_schema\":true}}",
+      "expected": {
+        "http_status_class": "4xx",
+        "decision": "ABSENT",
+        "audit_log_delta": 0,
+        "core_invocation": "NOT REACHED"
+      }
+    }
+  ],
+  "startup_cases": [
+    {
+      "id": "FIX-ERROR-005",
+      "scenario": "Invalid Policy — unknown decision action",
+      "policy_set": "finance-v1",
+      "policy_yaml": "name: finance-v1\nversion: \"FIX-ERROR-0.1\"\nrules:\n  - id: corrupted-action\n    pattern: \"fixture\"\n    action: \"grant-everything\"\n    score: 1.0\n",
+      "expected": {
+        "startup_exit_code": 78,
+        "listener_bound": false,
+        "audit_log_records": 0,
+        "fallback_decision": "ABSENT"
+      }
+    }
+  ]
+}

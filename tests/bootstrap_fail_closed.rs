@@ -13,6 +13,8 @@
 //! review feedback: there is no "warn and lazy-load" path; the runtime
 //! either starts with a fully validated enforcement boundary or not at all.
 
+use std::fs;
+use std::path::PathBuf;
 use std::process::Command;
 use std::time::Duration;
 use tempfile::TempDir;
@@ -108,5 +110,58 @@ fn refuses_to_start_when_trusted_signers_missing() {
     assert_eq!(
         code, EX_CONFIG,
         "missing trusted_signers.json under enforce must surface as exit 78, got {code}"
+    );
+}
+
+#[test]
+fn refuses_to_start_when_policy_action_is_invalid() {
+    let fixture: serde_json::Value = serde_json::from_str(include_str!("fixtures/FIX-ERROR.json"))
+        .expect("FIX-ERROR fixture is valid JSON");
+    let policy_case = &fixture["startup_cases"][0];
+    let policy_yaml = policy_case["policy_yaml"]
+        .as_str()
+        .expect("invalid policy fixture body");
+
+    let tmp = TempDir::new().unwrap();
+    let policies_dir = tmp.path().join("policies");
+    fs::create_dir_all(&policies_dir).unwrap();
+
+    // Provide the complete expected policy set so the tested failure is the
+    // malformed finance-v1 action, not an unrelated missing-pack condition.
+    let repository_policies = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("policies");
+    for name in ["medtech-v1.yaml", "hr-bias-v1.yaml"] {
+        fs::copy(repository_policies.join(name), policies_dir.join(name)).unwrap();
+    }
+    fs::write(policies_dir.join("trusted_signers.json"), b"{}").unwrap();
+    fs::write(policies_dir.join("finance-v1.yaml"), policy_yaml).unwrap();
+
+    let audit_log = tmp.path().join("audit.jsonl");
+    let code = run_and_collect_exit(&[
+        ("AURA_BIND", "127.0.0.1:0".into()),
+        ("AURA_POLICIES_DIR", policies_dir.display().to_string()),
+        (
+            "AURA_TRUSTED_SIGNERS_FILE",
+            policies_dir
+                .join("trusted_signers.json")
+                .display()
+                .to_string(),
+        ),
+        ("AURA_AUDIT_LOG_PATH", audit_log.display().to_string()),
+        ("AURA_AUTH_DISABLED", "true".into()),
+    ]);
+
+    assert_eq!(
+        code, EX_CONFIG,
+        "an invalid policy action must abort bootstrap with exit 78, got {code}"
+    );
+
+    let persisted = match fs::read_to_string(&audit_log) {
+        Ok(contents) => contents,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(error) => panic!("read failed-startup audit log: {error}"),
+    };
+    assert!(
+        persisted.lines().next().is_none(),
+        "failed policy bootstrap must persist no audit record: {persisted:?}"
     );
 }
