@@ -235,6 +235,22 @@ async fn gate41_core_failures_are_passive_and_raw_jsonl_excludes_prompt_response
         r#"printf '%s\n' '{"ari":100000,"drift":0,"evaluator_version":"gate4.1-mock"}'"#,
     );
     env::set_var("AURA_CORE_PYTHON", valid);
+
+    // Matched policy-only control: same marked payload, without measurement_input.
+    // This prevents a marker's incidental policy match from being mistaken for
+    // a measurement-induced policy change.
+    let marker_control = json!({
+        "context": "Finance Bot",
+        "policy_set": "finance-v1",
+        "payload": {
+            "prompt": SECRET_PROMPT,
+            "response": SECRET_RESPONSE
+        }
+    });
+    let (marker_control_status, marker_control_entry) =
+        post_json(app.clone(), marker_control, "g41-privacy-control").await;
+    assert_eq!(marker_control_status, StatusCode::OK);
+
     let (privacy_status, privacy_entry) = post_json(
         app.clone(),
         measured_request(SECRET_PROMPT, SECRET_RESPONSE),
@@ -249,7 +265,8 @@ async fn gate41_core_failures_are_passive_and_raw_jsonl_excludes_prompt_response
     assert_eq!(privacy_entry["core_measurement"]["status"], "COMPLETED");
     assert_eq!(
         privacy_entry["decision"].as_str(),
-        Some(baseline_decision.as_str())
+        marker_control_entry["decision"].as_str(),
+        "adding Core measurement must not alter the policy decision for the same marked payload"
     );
 
     let raw = fs::read(&log_path).expect("read raw JSONL bytes");
@@ -393,8 +410,8 @@ async fn gate41_core_failures_are_passive_and_raw_jsonl_excludes_prompt_response
         .collect();
     assert_eq!(
         entries.len(),
-        8,
-        "two baselines + privacy + five failure probes"
+        9,
+        "two baselines + marker control + privacy + five failure probes"
     );
     verify_chain(&entries).expect("JSONL chain verifies after Core failures");
     assert!(
