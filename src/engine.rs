@@ -44,7 +44,10 @@ pub fn evaluate(shadow: &str, context: &str, rules: &[CompiledRule]) -> (String,
         match rule.action.to_ascii_lowercase().as_str() {
             "deny" => has_deny = true,
             "review" => has_review = true,
-            _ => {} // 'allow' or unknown — no decision contribution.
+            "allow" => {}
+            // Defense in depth: a CompiledRule created outside the validated
+            // loader must never make an unknown action disappear into ALLOW.
+            _ => has_deny = true,
         }
 
         violations.push(Violation {
@@ -175,10 +178,12 @@ mod tests {
     }
 
     #[test]
-    fn unknown_action_treated_as_allow() {
+    fn unknown_action_fails_closed_as_deny() {
+        // Production policy loading rejects this state. The evaluator still
+        // fails closed if a malformed CompiledRule bypasses that boundary.
         let rules = vec![rule("unknown", "foo", "unknown_action", 0.5)];
         let (d, v) = evaluate("foo", "ctx", &rules);
-        assert_eq!(d, "ALLOW");
+        assert_eq!(d, "DENY");
         assert_eq!(v.len(), 1);
         assert_eq!(v[0].action, "unknown_action");
     }
