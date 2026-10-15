@@ -36,6 +36,15 @@ pub enum AuraError {
         message: String,
     },
 
+    /// A policy rule declares an unsupported decision action.
+    #[error("invalid policy action '{action}' in rule '{rule_id}'; allowed actions: allow, deny, review")]
+    InvalidPolicyAction {
+        /// Rule identifier from the policy YAML.
+        rule_id: String,
+        /// Unsupported action as written in the policy.
+        action: String,
+    },
+
     /// Policy signature verification failed.
     #[error("policy signature verification failed: {0}")]
     PolicySignature(String),
