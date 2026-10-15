@@ -341,7 +341,7 @@ async fn gate41_core_failures_are_passive_and_raw_jsonl_excludes_prompt_response
         .lines()
         .map(|line| serde_json::from_str(line).expect("every JSONL line parses as AuditEntry"))
         .collect();
-    assert_eq!(entries.len(), 6, "baseline + privacy + four failure probes");
+    assert_eq!(entries.len(), 7, "baseline + privacy + five failure probes");
     verify_chain(&entries).expect("JSONL chain verifies after Core failures");
     assert!(
         entries.iter().any(|entry| {
