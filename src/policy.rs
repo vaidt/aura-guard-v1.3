@@ -245,6 +245,19 @@ pub fn load_policy(
 }
 
 fn compile_rule(r: YamlRule) -> Result<CompiledRule> {
+    // Unknown actions are not a neutral no-op: ignoring one can turn a
+    // corrupted policy into an implicit ALLOW. Reject it while loading the
+    // policy, before the policy can enter the runtime cache.
+    if !matches!(
+        r.action.to_ascii_lowercase().as_str(),
+        "allow" | "deny" | "review"
+    ) {
+        return Err(AuraError::InvalidPolicyAction {
+            rule_id: r.id.clone(),
+            action: r.action.clone(),
+        });
+    }
+
     // Always compile case-insensitive so policies remain "human-readable"
     // (e.g. `PL[0-9]{26}`) yet still match shadow-normalized lowercase input.
     let pattern = Regex::new(&format!("(?i){}", r.pattern)).map_err(|e| AuraError::BadRegex {
