@@ -67,6 +67,19 @@ pub enum AuraError {
         actual: String,
     },
 
+    /// Audit-chain sequence numbers are not zero-based and contiguous.
+    #[error(
+        "SEQUENCE BREAK DETECTED at entry #{index}: expected seq={expected}, got seq={actual}"
+    )]
+    SequenceBreak {
+        /// Zero-based index of the entry whose sequence number is invalid.
+        index: usize,
+        /// Expected sequence number.
+        expected: u64,
+        /// Sequence number stored on the offending entry.
+        actual: u64,
+    },
+
     /// Replay verification recomputed a different decision.
     #[error(
         "REPLAY MISMATCH at entry #{index}: stored decision={stored}, recomputed={recomputed}"

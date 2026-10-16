@@ -11,6 +11,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use crate::chain::verify_chain_with_genesis;
 use crate::models::AuditEntry;
 use crate::{AuraError, Result};
 
@@ -211,8 +212,7 @@ fn replay_head(path: &Path, genesis: &str) -> Result<(u64, String)> {
             path.display()
         ))
     })?;
-    let mut last_seq: Option<u64> = None;
-    let mut head_chain = genesis.to_string();
+    let mut entries = Vec::new();
     for line in raw.lines() {
         let line = line.trim();
         if line.is_empty() {
@@ -224,16 +224,26 @@ fn replay_head(path: &Path, genesis: &str) -> Result<(u64, String)> {
                 &line[..line.len().min(80)]
             ))
         })?;
-        last_seq = Some(entry.seq);
-        head_chain = entry.chain_hash;
+        entries.push(entry);
     }
-    let next_seq = last_seq
+    verify_chain_with_genesis(&entries, genesis).map_err(|error| {
+        AuraError::LogWrite(format!(
+            "existing audit log failed chain verification: {error}"
+        ))
+    })?;
+    let next_seq = entries
+        .last()
+        .map(|entry| entry.seq)
         .map(|s| {
             s.checked_add(1)
                 .ok_or_else(|| AuraError::LogWrite("audit sequence exhausted at u64::MAX".into()))
         })
         .transpose()?
         .unwrap_or(0);
+    let head_chain = entries
+        .last()
+        .map(|entry| entry.chain_hash.clone())
+        .unwrap_or_else(|| genesis.to_string());
     Ok((next_seq, head_chain))
 }
 
@@ -377,5 +387,80 @@ mod tests {
         let entries = read_all_entries(&path).expect("read JSONL");
         assert_eq!(entries.len(), 1);
         verify_chain(&entries).expect("chain remains intact");
+    }
+
+    #[test]
+    fn open_resumes_a_valid_existing_chain() {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let path = directory.path().join("audit.jsonl");
+        let genesis = genesis_hash();
+        let writer = LogWriter::open(path.clone(), &genesis).expect("open fresh writer");
+        let first = writer
+            .append_with(|seq, prev_hash| build_entry(seq, prev_hash, 1, 0))
+            .expect("append first entry");
+        drop(writer);
+
+        let resumed = LogWriter::open(path.clone(), &genesis).expect("resume valid chain");
+        assert_eq!(resumed.next_seq(), 1);
+        assert_eq!(resumed.current_head(), first.chain_hash);
+        resumed
+            .append_with(|seq, prev_hash| build_entry(seq, prev_hash, 1, 1))
+            .expect("append after resume");
+        verify_chain(&read_all_entries(&path).expect("read resumed log"))
+            .expect("resumed chain verifies");
+    }
+
+    #[test]
+    fn open_rejects_parseable_log_with_invalid_chain_hash() {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let path = directory.path().join("audit.jsonl");
+        let mut entry = build_entry(0, &genesis_hash(), 1, 0);
+        entry.chain_hash = "0".repeat(64);
+        std::fs::write(
+            &path,
+            format!(
+                "{}\n",
+                serde_json::to_string(&entry).expect("serialize entry")
+            ),
+        )
+        .expect("write invalid chain");
+
+        let error = match LogWriter::open(path, &genesis_hash()) {
+            Ok(_) => panic!("invalid chain must fail"),
+            Err(error) => error,
+        };
+        assert!(error.to_string().contains("failed chain verification"));
+    }
+
+    #[test]
+    fn open_rejects_parseable_log_with_sequence_gap() {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let path = directory.path().join("audit.jsonl");
+        let mut entry = build_entry(1, &genesis_hash(), 1, 0);
+        entry.chain_hash = compute_chain_hash(
+            &entry.prev_hash,
+            &entry.decision,
+            &entry.policy_set,
+            &entry.policy_hash,
+            &entry.context,
+            &entry.input_hash,
+            &entry.shadow_hash,
+            entry.seq,
+            &entry.timestamp,
+        );
+        std::fs::write(
+            &path,
+            format!(
+                "{}\n",
+                serde_json::to_string(&entry).expect("serialize entry")
+            ),
+        )
+        .expect("write invalid sequence");
+
+        let error = match LogWriter::open(path, &genesis_hash()) {
+            Ok(_) => panic!("sequence gap must fail"),
+            Err(error) => error,
+        };
+        assert!(error.to_string().contains("SEQUENCE BREAK DETECTED"));
     }
 }

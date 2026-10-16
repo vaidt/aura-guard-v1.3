@@ -189,8 +189,20 @@ pub fn recompute_for_entry(entry: &AuditEntry) -> String {
 /// On success returns the final `chain_hash` so callers can also pin
 /// "head-of-chain" digests in offline registries.
 pub fn verify_chain(entries: &[AuditEntry]) -> Result<String> {
-    let mut expected_prev = genesis_hash();
+    verify_chain_with_genesis(entries, &genesis_hash())
+}
+
+pub(crate) fn verify_chain_with_genesis(entries: &[AuditEntry], genesis: &str) -> Result<String> {
+    let mut expected_prev = genesis.to_string();
+    let mut expected_seq = 0u64;
     for (i, entry) in entries.iter().enumerate() {
+        if entry.seq != expected_seq {
+            return Err(AuraError::SequenceBreak {
+                index: i,
+                expected: expected_seq,
+                actual: entry.seq,
+            });
+        }
         let schema_matches_measurement =
             match (entry.schema.as_str(), entry.core_measurement.as_ref()) {
                 ("aura-guard.audit.v1", None) => true,
@@ -224,6 +236,15 @@ pub fn verify_chain(entries: &[AuditEntry]) -> Result<String> {
             });
         }
         expected_prev = entry.chain_hash.clone();
+        if i + 1 < entries.len() {
+            expected_seq = expected_seq
+                .checked_add(1)
+                .ok_or(AuraError::SequenceBreak {
+                    index: i + 1,
+                    expected: u64::MAX,
+                    actual: entries[i + 1].seq,
+                })?;
+        }
     }
     Ok(expected_prev)
 }
@@ -343,10 +364,14 @@ mod tests {
         let e2 = entry(2, &e1.chain_hash, "REVIEW");
         // Swap e1 and e2
         let err = verify_chain(&[e0, e2, e1]).expect_err("must detect reorder");
-        match err {
-            AuraError::ChainBreak { index, .. } => assert_eq!(index, 1),
-            other => panic!("unexpected error: {other}"),
-        }
+        assert!(matches!(
+            err,
+            AuraError::SequenceBreak {
+                index: 1,
+                expected: 1,
+                actual: 2
+            }
+        ));
     }
 
     #[test]
@@ -356,10 +381,14 @@ mod tests {
         let e2 = entry(2, &e1.chain_hash, "REVIEW");
         // Skip e1
         let err = verify_chain(&[e0, e2]).expect_err("must detect skip");
-        match err {
-            AuraError::ChainBreak { index, .. } => assert_eq!(index, 1),
-            other => panic!("unexpected error: {other}"),
-        }
+        assert!(matches!(
+            err,
+            AuraError::SequenceBreak {
+                index: 1,
+                expected: 1,
+                actual: 2
+            }
+        ));
     }
 
     #[test]
@@ -367,10 +396,14 @@ mod tests {
         let e0 = entry(0, &genesis_hash(), "ALLOW");
         // Duplicate e0
         let err = verify_chain(&[e0.clone(), e0.clone()]).expect_err("must detect duplicate");
-        match err {
-            AuraError::ChainBreak { index, .. } => assert_eq!(index, 1),
-            other => panic!("unexpected error: {other}"),
-        }
+        assert!(matches!(
+            err,
+            AuraError::SequenceBreak {
+                index: 1,
+                expected: 1,
+                actual: 0
+            }
+        ));
     }
 
     #[test]
@@ -383,6 +416,36 @@ mod tests {
             AuraError::ChainBreak { index, .. } => assert_eq!(index, 0),
             other => panic!("unexpected error: {other}"),
         }
+    }
+
+    #[test]
+    fn verify_chain_rejects_nonzero_first_sequence() {
+        let e0 = entry(1, &genesis_hash(), "ALLOW");
+        let err = verify_chain(&[e0]).expect_err("first sequence must be zero");
+        assert!(matches!(
+            err,
+            AuraError::SequenceBreak {
+                index: 0,
+                expected: 0,
+                actual: 1
+            }
+        ));
+    }
+
+    #[test]
+    fn verify_chain_rejects_sequence_gap_even_with_valid_hashes() {
+        let e0 = entry(0, &genesis_hash(), "ALLOW");
+        let mut e1 = entry(2, &e0.chain_hash, "DENY");
+        e1.chain_hash = recompute_for_entry(&e1);
+        let err = verify_chain(&[e0, e1]).expect_err("sequence gap must be rejected");
+        assert!(matches!(
+            err,
+            AuraError::SequenceBreak {
+                index: 1,
+                expected: 1,
+                actual: 2
+            }
+        ));
     }
 
     #[test]
