@@ -12,7 +12,7 @@
 //! * Always verifies the SHA-256 hash chain. Historical v1 entries retain their
 //!   original preimage; v2 entries require a well-formed `core_measurement` and
 //!   verify its compact, length-prefixed JSON as part of `chain_hash`. A break
-//!   aborts with exit code `2` and prints `CHAIN BREAK DETECTED at entry #N`.
+//!   aborts with exit code `2` on a hash-chain or sequence verification failure.
 //! * With `--verify-lineage`, the on-disk policy file referenced by each
 //!   entry is reloaded and its SHA-256 is compared against the `policy_hash`
 //!   stored in the log. Mismatches abort with exit code `3`
