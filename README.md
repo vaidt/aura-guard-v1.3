@@ -1,4 +1,16 @@
-# Aura-Guard
+# Aura-Guard v1.3 — `vaidt` fork
+
+> **Repository role:** fork-specific operational middleware and audit implementation.
+
+This repository is a GitHub fork of [`Aura-IDToken/aura-guard-v1.3`](https://github.com/Aura-IDToken/aura-guard-v1.3). Treat its code, CI outcomes, configurations, and security claims as specific to this fork’s exact revision. A workflow badge or test result from the parent repository is not evidence that the corresponding fork commit passed that check.
+
+Audit-chain integrity and signature verification provide bounded technical properties under stated inputs and trust assumptions; they do not by themselves establish event truth, record completeness, signer authority, or normative validity of a policy.
+
+For every assurance claim, link the exact fork commit, applicable workflow run, policy/configuration, verifier, and limitations. This repository does not ratify protocol semantics or establish G1 governance authority.
+
+> **Scope boundary:** GitHub fork lineage does not imply code equivalence, conformance, or release authorization.
+
+> **Evidence note:** badges and feature descriptions below are repository statements; verify each against this fork’s revision and corresponding workflow/test evidence.
 
 [![CI](https://github.com/AuraIDToken/aura-guard-v1.3/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/AuraIDToken/aura-guard-v1.3/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
