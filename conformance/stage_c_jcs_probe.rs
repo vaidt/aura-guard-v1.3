@@ -229,11 +229,13 @@ fn execute(
         "scope_note": "Isolated JCS probe only; no receiver handoff, Merkle decision, protocol conformance, acceptance, ratification, or release result."
     });
 
-    let response_bytes = serde_json::to_vec(&response)
-        .map_err(|error| ProbeError::output(format!("cannot serialize response envelope: {error}")))?;
+    let response_bytes = serde_json::to_vec(&response).map_err(|error| {
+        ProbeError::output(format!("cannot serialize response envelope: {error}"))
+    })?;
     if let Some(parent) = response_path.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|error| ProbeError::output(format!("cannot create response directory: {error}")))?;
+        fs::create_dir_all(parent).map_err(|error| {
+            ProbeError::output(format!("cannot create response directory: {error}"))
+        })?;
     }
     fs::write(response_path, response_bytes)
         .map_err(|error| ProbeError::output(format!("cannot write response envelope: {error}")))?;
@@ -302,10 +304,8 @@ mod tests {
 
     #[test]
     fn request_contract_rejects_bad_source_commit() {
-        let invalid = VALID_REQUEST.replace(
-            "991274eed57d5b3308b0607feeb4d01e6a485974",
-            "not-a-git-sha",
-        );
+        let invalid =
+            VALID_REQUEST.replace("991274eed57d5b3308b0607feeb4d01e6a485974", "not-a-git-sha");
         assert!(parse_request(invalid.as_bytes()).is_err());
     }
 
@@ -319,12 +319,16 @@ mod tests {
         let specification_root = env::var_os("AURA_SPECIFICATION_ROOT")
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from("../aura-specification"));
-        let fixture = specification_root.join("fixtures/corpus/CANONICAL-003_jcs_full_discriminator.json");
-        let expected = specification_root.join("fixtures/corpus/CANONICAL-003_jcs_full_discriminator.expected.jcs");
-        let fixture_bytes = fs::read(&fixture).expect("fixture available in pinned specification checkout");
+        let fixture =
+            specification_root.join("fixtures/corpus/CANONICAL-003_jcs_full_discriminator.json");
+        let expected = specification_root
+            .join("fixtures/corpus/CANONICAL-003_jcs_full_discriminator.expected.jcs");
+        let fixture_bytes =
+            fs::read(&fixture).expect("fixture available in pinned specification checkout");
         let actual = canonicalize_protocol_object(&fixture_bytes, "CANONICAL-003")
             .expect("JCS canonicalization succeeds");
-        let expected_bytes = fs::read(&expected).expect("oracle available in pinned specification checkout");
+        let expected_bytes =
+            fs::read(&expected).expect("oracle available in pinned specification checkout");
         assert_eq!(actual, expected_bytes);
         assert_eq!(actual.len(), 577);
         assert!(!actual.ends_with(b"\n"));
