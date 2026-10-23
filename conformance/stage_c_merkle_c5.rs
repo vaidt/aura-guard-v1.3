@@ -152,7 +152,7 @@ fn c5_inclusion_proofs_match_oracle_and_tampering_fails_closed() {
             let proof = audit_path(index, tree_leaves);
             let expected_proof = tree.proofs.iter().find(|entry| entry.leaf_index == index)
                 .expect("oracle must contain a proof for every index");
-            let proof_hex: Vec<String> = proof.iter().map(hex::encode).collect();
+            let proof_hex: Vec<String> = proof.iter().map(|item| hex::encode(item)).collect();
             assert_eq!(proof_hex, expected_proof.sibling_hashes_sha256,
                 "RI-RS audit path differs from independent oracle: size={size}, index={index}");
             assert!(verify_audit_path(&tree_leaves[index], index, size, &proof, &root),
