@@ -131,6 +131,13 @@ path = "conformance/canonical/canonical_001.rs"
 name = "canonical_003"
 path = "conformance/canonical/canonical_003.rs"
 
+
+# Stage C JCS adapter shim — isolated example target, not a production binary.
+# Uses the existing pinned dev-dependency serde_json_canonicalizer = "=0.3.2".
+[[example]]
+name = "stage_c_jcs_probe"
+path = "conformance/stage_c_jcs_probe.rs"
+
 [lints.rust]
 unsafe_code = "forbid"
 missing_docs = "warn"
