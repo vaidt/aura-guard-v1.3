@@ -1,0 +1,30 @@
+name: Stage C C6 RI-RS strict wire consumer experiment
+
+on:
+  push:
+    branches: ["experiment/stage-c-c6-wire-consumer-20261024"]
+    paths:
+      - "conformance/strict_wire.rs"
+      - "conformance/strict_wire_c6.rs"
+      - "src/lib.rs"
+      - ".github/workflows/stage-c-c6-wire-consumer.yml"
+  pull_request:
+    branches: ["experiment/stage-c-merkle-c5-20261023"]
+    paths:
+      - "conformance/strict_wire.rs"
+      - "conformance/strict_wire_c6.rs"
+      - "src/lib.rs"
+      - ".github/workflows/stage-c-c6-wire-consumer.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  strict-wire:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.86.0
+      - name: Run strict BC-02.1 consumer tests
+        run: cargo test --test strict_wire_c6 -- --nocapture
