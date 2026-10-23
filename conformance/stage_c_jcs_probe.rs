@@ -5,6 +5,7 @@
 //! serializer/Merkle path. It does not implement BC-02 receiver semantics and
 //! cannot assign protocol-conformance or release status.
 
+use clap::Parser;
 use serde::Deserialize;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -29,6 +30,23 @@ struct Request {
     input_path: String,
     json_pointer: String,
     source_commit: String,
+}
+
+#[derive(Debug, Parser)]
+#[command(name = "stage_c_jcs_probe", about = "Isolated, non-normative Stage C JCS adapter")]
+struct Cli {
+    /// JSON request conforming to AURA-STAGE-C-ADAPTER-REQUEST/0.1.
+    #[arg(long, value_name = "PATH")]
+    request: PathBuf,
+    /// Path for the machine-readable adapter response envelope.
+    #[arg(long, value_name = "PATH")]
+    response: PathBuf,
+    /// Path for exact canonical UTF-8 output octets.
+    #[arg(long, value_name = "PATH")]
+    output_octets: PathBuf,
+    /// Root of the checkout containing the canonical fixture corpus.
+    #[arg(long, value_name = "PATH")]
+    repo_root: Option<PathBuf>,
 }
 
 #[derive(Debug)]
@@ -231,56 +249,10 @@ fn execute(
 }
 
 fn main() -> ExitCode {
-    let mut args = env::args().skip(1);
-    let mut request = None;
-    let mut response = None;
-    let mut output_octets = None;
-    let mut repo_root = None;
+    let cli = Cli::parse();
+    let repo_root = cli.repo_root.unwrap_or_else(|| PathBuf::from("."));
 
-    while let Some(arg) = args.next() {
-        let value = match args.next() {
-            Some(value) => value,
-            None => {
-                eprintln!("INPUT_ERROR: missing value for {arg}");
-                return ExitCode::from(2);
-            }
-        };
-        match arg.as_str() {
-            "--request" => request = Some(PathBuf::from(value)),
-            "--response" => response = Some(PathBuf::from(value)),
-            "--output-octets" => output_octets = Some(PathBuf::from(value)),
-            "--repo-root" => repo_root = Some(PathBuf::from(value)),
-            _ => {
-                eprintln!("INPUT_ERROR: unknown argument {arg}");
-                return ExitCode::from(2);
-            }
-        }
-    }
-
-    let request = match request {
-        Some(path) => path,
-        None => {
-            eprintln!("INPUT_ERROR: --request is required");
-            return ExitCode::from(2);
-        }
-    };
-    let response = match response {
-        Some(path) => path,
-        None => {
-            eprintln!("INPUT_ERROR: --response is required");
-            return ExitCode::from(2);
-        }
-    };
-    let output_octets = match output_octets {
-        Some(path) => path,
-        None => {
-            eprintln!("INPUT_ERROR: --output-octets is required");
-            return ExitCode::from(2);
-        }
-    };
-    let repo_root = repo_root.unwrap_or_else(|| PathBuf::from("."));
-
-    match execute(&request, &response, &output_octets, &repo_root) {
+    match execute(&cli.request, &cli.response, &cli.output_octets, &repo_root) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("PROBE_ERROR: {}", error.message);
