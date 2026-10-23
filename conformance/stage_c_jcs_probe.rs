@@ -33,7 +33,10 @@ struct Request {
 }
 
 #[derive(Debug, Parser)]
-#[command(name = "stage_c_jcs_probe", about = "Isolated, non-normative Stage C JCS adapter")]
+#[command(
+    name = "stage_c_jcs_probe",
+    about = "Isolated, non-normative Stage C JCS adapter"
+)]
 struct Cli {
     /// JSON request conforming to AURA-STAGE-C-ADAPTER-REQUEST/0.1.
     #[arg(long, value_name = "PATH")]
@@ -57,20 +60,32 @@ struct ProbeError {
 
 impl ProbeError {
     fn input(message: impl Into<String>) -> Self {
-        Self { exit_code: 2, message: message.into() }
+        Self {
+            exit_code: 2,
+            message: message.into(),
+        }
     }
 
     fn execution(message: impl Into<String>) -> Self {
-        Self { exit_code: 3, message: message.into() }
+        Self {
+            exit_code: 3,
+            message: message.into(),
+        }
     }
 
     fn output(message: impl Into<String>) -> Self {
-        Self { exit_code: 4, message: message.into() }
+        Self {
+            exit_code: 4,
+            message: message.into(),
+        }
     }
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
-    Sha256::digest(bytes).iter().map(|byte| format!("{byte:02x}")).collect()
+    Sha256::digest(bytes)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 
 fn valid_git_sha(value: &str) -> bool {
@@ -122,9 +137,12 @@ fn parse_request(raw: &[u8]) -> Result<Request, ProbeError> {
 fn resolve_input_path(repo_root: &Path, input_path: &str) -> Result<PathBuf, ProbeError> {
     let candidate = Path::new(input_path);
     if candidate.is_absolute()
-        || candidate
-            .components()
-            .any(|component| matches!(component, Component::ParentDir | Component::RootDir | Component::Prefix(_)))
+        || candidate.components().any(|component| {
+            matches!(
+                component,
+                Component::ParentDir | Component::RootDir | Component::Prefix(_)
+            )
+        })
     {
         return Err(ProbeError::input(
             "input_path must be repository-relative and must not traverse outside repo root",
@@ -158,9 +176,9 @@ fn canonicalize_protocol_object(
             fixture.get("fixture_id").and_then(Value::as_str)
         )));
     }
-    let protocol_object = fixture
-        .get("protocol_object")
-        .ok_or_else(|| ProbeError::input("fixture does not contain JSON Pointer /protocol_object"))?;
+    let protocol_object = fixture.get("protocol_object").ok_or_else(|| {
+        ProbeError::input("fixture does not contain JSON Pointer /protocol_object")
+    })?;
 
     serde_json_canonicalizer::to_vec(protocol_object)
         .map_err(|error| ProbeError::execution(format!("JCS engine failed: {error}")))
@@ -188,12 +206,12 @@ fn execute(
     let input_path = resolve_input_path(repo_root, &request.input_path)?;
     let input_bytes = fs::read(&input_path)
         .map_err(|error| ProbeError::input(format!("cannot read fixture: {error}")))?;
-    let canonical_bytes =
-        canonicalize_protocol_object(&input_bytes, &request.fixture_id)?;
+    let canonical_bytes = canonicalize_protocol_object(&input_bytes, &request.fixture_id)?;
 
     if let Some(parent) = output_path.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|error| ProbeError::output(format!("cannot create output directory: {error}")))?;
+        fs::create_dir_all(parent).map_err(|error| {
+            ProbeError::output(format!("cannot create output directory: {error}"))
+        })?;
     }
     fs::write(output_path, &canonical_bytes)
         .map_err(|error| ProbeError::output(format!("cannot write raw output octets: {error}")))?;
