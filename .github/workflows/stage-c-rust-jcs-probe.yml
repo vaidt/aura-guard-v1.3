@@ -82,7 +82,7 @@ jobs:
           test "$(wc -c < "$actual" | tr -d ' ')" = "577"
           output_sha="$(sha256sum "$actual" | awk '{print $1}')"
           test "$output_sha" = "9fb648c388c4485575d25c1d6171ba691fec51c1b433b11f4d61197bbe2a5509"
-          leaf_sha="$(python -c 'import hashlib, pathlib; print(hashlib.sha256(b"\\x00" + pathlib.Path("artifacts/stage-c/rust-jcs/canonical.bin").read_bytes()).hexdigest())')"
+          leaf_sha="$(python -c 'import hashlib, pathlib; print(hashlib.sha256(bytes([0]) + pathlib.Path("artifacts/stage-c/rust-jcs/canonical.bin").read_bytes()).hexdigest())')"
           test "$leaf_sha" = "38672ea2bd0ea87b2446efce8d4ba4adeb822e0baaecee4a54b73179198d2b3e"
           echo "Exact expected-byte comparison: matched"
           echo "Canonical SHA-256: $output_sha"
