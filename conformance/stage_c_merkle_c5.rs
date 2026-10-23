@@ -1,9 +1,9 @@
 //! Stage C C5 tests against the production RI-RS Merkle primitives.
 //!
 //! This integration target is ignored by default because it requires the
-//! external draft corpus at AURA_C5_MERKLE_CORPUS. The dedicated C5 workflow
-//! supplies that exact file and invokes this target explicitly. Runtime
-//! source and production dependency semantics are unchanged.
+//! external draft corpus and independent oracle report. The dedicated C5
+//! workflow supplies both and invokes this target explicitly. Runtime source
+//! and production dependency semantics are unchanged.
 
 use aura_guard::merkle::{audit_path, empty_root, leaf_hash, merkle_root, node_hash, verify_audit_path};
 use serde::Deserialize;
@@ -37,6 +37,25 @@ struct DomainCase {
     expected_undomain_separated_node_sha256: String,
 }
 
+#[derive(Debug, Deserialize)]
+struct OracleReport {
+    schema: String,
+    trees: Vec<OracleTree>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OracleTree {
+    tree_size: usize,
+    expected_root_sha256: String,
+    proofs: Vec<OracleProof>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OracleProof {
+    leaf_index: usize,
+    sibling_hashes_sha256: Vec<String>,
+}
+
 fn digest_hex(digest: &[u8; 32]) -> String {
     hex::encode(digest)
 }
@@ -44,11 +63,21 @@ fn digest_hex(digest: &[u8; 32]) -> String {
 fn read_corpus() -> Corpus {
     let path = std::env::var_os("AURA_C5_MERKLE_CORPUS")
         .map(PathBuf::from)
-        .expect("C5 workflow must set AURA_C5_MERKLE_CORPUS to the pinned draft corpus");
+        .expect("C5 workflow must set AURA_C5_MERKLE_CORPUS");
     let bytes = fs::read(&path).expect("C5 corpus must be readable");
     let corpus: Corpus = serde_json::from_slice(&bytes).expect("C5 corpus schema must parse");
     assert_eq!(corpus.schema, "AURA-STAGE-C-MERKLE-C5-CORPUS/0.1");
     corpus
+}
+
+fn read_oracle() -> OracleReport {
+    let path = std::env::var_os("AURA_C5_MERKLE_ORACLE")
+        .map(PathBuf::from)
+        .expect("C5 workflow must set AURA_C5_MERKLE_ORACLE");
+    let bytes = fs::read(&path).expect("C5 oracle report must be readable");
+    let oracle: OracleReport = serde_json::from_slice(&bytes).expect("C5 oracle report must parse");
+    assert_eq!(oracle.schema, "AURA-STAGE-C-MERKLE-C5-ORACLE-REPORT/0.1");
+    oracle
 }
 
 #[test]
@@ -98,22 +127,34 @@ fn c5_tree_roots_and_shape_match_all_fixed_vectors() {
 }
 
 #[test]
-#[ignore = "requires the external C5 corpus; run explicitly in the Stage C C5 workflow"]
-fn c5_inclusion_proofs_verify_and_tampering_fails_closed() {
+#[ignore = "requires the external C5 corpus and oracle report; run explicitly in the Stage C C5 workflow"]
+fn c5_inclusion_proofs_match_oracle_and_tampering_fails_closed() {
     let corpus = read_corpus();
+    let oracle = read_oracle();
     let leaves: Vec<[u8; 32]> = corpus.leaf_payloads_utf8.iter()
         .map(|payload| leaf_hash(payload.as_bytes()))
         .collect();
 
     for case in corpus.expected_roots {
         let size = case.tree_size;
+        let tree = oracle.trees.iter().find(|tree| tree.tree_size == size)
+            .expect("oracle must contain every tree size");
+        assert_eq!(tree.expected_root_sha256, case.expected_root_sha256, "oracle root mismatch at size={size}");
         if size == 0 {
+            assert!(tree.proofs.is_empty(), "empty tree must not contain inclusion proofs");
             continue;
         }
         let tree_leaves = &leaves[..size];
         let root = merkle_root(tree_leaves);
+        assert_eq!(tree.proofs.len(), size, "oracle proof count mismatch at size={size}");
+
         for index in 0..size {
             let proof = audit_path(index, tree_leaves);
+            let expected_proof = tree.proofs.iter().find(|entry| entry.leaf_index == index)
+                .expect("oracle must contain a proof for every index");
+            let proof_hex: Vec<String> = proof.iter().map(hex::encode).collect();
+            assert_eq!(proof_hex, expected_proof.sibling_hashes_sha256,
+                "RI-RS audit path differs from independent oracle: size={size}, index={index}");
             assert!(verify_audit_path(&tree_leaves[index], index, size, &proof, &root),
                 "valid proof rejected: tree_size={size}, leaf_index={index}");
             assert!(!verify_audit_path(&leaf_hash(b"AURA-C5-TAMPERED"), index, size, &proof, &root),
@@ -128,18 +169,15 @@ fn c5_inclusion_proofs_verify_and_tampering_fails_closed() {
                 truncated.pop();
                 assert!(!verify_audit_path(&tree_leaves[index], index, size, &truncated, &root),
                     "truncated proof accepted: tree_size={size}, leaf_index={index}");
-
                 let mut extended = proof.clone();
                 extended.push([0u8; 32]);
                 assert!(!verify_audit_path(&tree_leaves[index], index, size, &extended, &root),
                     "extra proof element accepted: tree_size={size}, leaf_index={index}");
-
                 let mut corrupted = proof.clone();
                 corrupted[0][0] ^= 0x01;
                 assert!(!verify_audit_path(&tree_leaves[index], index, size, &corrupted, &root),
                     "tampered sibling accepted: tree_size={size}, leaf_index={index}");
             }
-
             if size > 1 {
                 let wrong_index = (index + 1) % size;
                 assert!(!verify_audit_path(&tree_leaves[index], wrong_index, size, &proof, &root),
