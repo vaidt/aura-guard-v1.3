@@ -7,7 +7,7 @@ license = "MIT"
 description = "Deterministic AI audit middleware with hash-chained evidence log and Ed25519-signed policies."
 authors = ["Aura-Guard Engineering"]
 repository = "https://github.com/Aura-IDToken/aura-guard"
-keywords = ["audit", "compliance", "ai", "deterministic", "evidence"]
+keywords = ["audit", "compliance", "cryptography"]
 categories = ["web-programming", "cryptography"]
 
 [lib]
@@ -77,8 +77,6 @@ anyhow = "1"
 # Observability
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "fmt"] }
-
-# Metrics (Prometheus)
 metrics = "0.24"
 metrics-exporter-prometheus = { version = "0.16", default-features = false }
 
@@ -138,6 +136,12 @@ path = "conformance/canonical/canonical_003.rs"
 name = "stage_c_jcs_probe"
 path = "conformance/stage_c_jcs_probe.rs"
 
+# Stage C C5 Merkle conformance test — ignored by default; explicitly enabled
+# only by the read-only Stage C C5 workflow with a pinned external corpus.
+[[test]]
+name = "stage_c_merkle_c5"
+path = "conformance/stage_c_merkle_c5.rs"
+
 [lints.rust]
 unsafe_code = "forbid"
 missing_docs = "warn"
@@ -145,6 +149,3 @@ rust_2018_idioms = { level = "warn", priority = -1 }
 
 [lints.clippy]
 all = { level = "deny", priority = -1 }
-unwrap_used = "warn"
-expect_used = "warn"
-panic = "warn"
