@@ -153,7 +153,9 @@ fn c5_tree_roots_and_shape_match_all_fixed_vectors() {
 fn c5_inclusion_proofs_match_oracle_and_tampering_fails_closed() {
     let corpus = read_corpus();
     let oracle = read_oracle();
-    let leaves: Vec<[u8; 32]> = corpus.leaf_payloads_utf8.iter()
+    let leaves: Vec<[u8; 32]> = corpus
+        .leaf_payloads_utf8
+        .iter()
         .map(|payload| leaf_hash(payload.as_bytes()))
         .collect();
 
