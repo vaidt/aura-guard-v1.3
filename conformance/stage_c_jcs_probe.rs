@@ -343,13 +343,16 @@ mod tests {
     }
 
     #[test]
-    fn canonicalizer_matches_the_pinned_canoncial003_oracle() {
-        let fixture = Path::new("fixtures/corpus/CANONICAL-003_jcs_full_discriminator.json");
-        let expected = Path::new("fixtures/corpus/CANONICAL-003_jcs_full_discriminator.expected.jcs");
-        let fixture_bytes = fs::read(fixture).expect("fixture checked out in working directory");
+    fn canonicalizer_matches_the_pinned_canonical003_oracle() {
+        let specification_root = env::var_os("AURA_SPECIFICATION_ROOT")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("../aura-specification"));
+        let fixture = specification_root.join("fixtures/corpus/CANONICAL-003_jcs_full_discriminator.json");
+        let expected = specification_root.join("fixtures/corpus/CANONICAL-003_jcs_full_discriminator.expected.jcs");
+        let fixture_bytes = fs::read(&fixture).expect("fixture available in pinned specification checkout");
         let actual = canonicalize_protocol_object(&fixture_bytes, "CANONICAL-003")
             .expect("JCS canonicalization succeeds");
-        let expected_bytes = fs::read(expected).expect("oracle checked out in working directory");
+        let expected_bytes = fs::read(&expected).expect("oracle available in pinned specification checkout");
         assert_eq!(actual, expected_bytes);
         assert_eq!(actual.len(), 577);
         assert!(!actual.ends_with(b"\n"));
