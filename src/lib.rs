@@ -25,6 +25,10 @@ pub mod rfc3161;
 pub mod sealer;
 pub mod segment;
 pub mod tst_verify;
+
+/// Experimental strict BC-02.1 receipt JSON consumer for Stage C C6.
+#[path = "../conformance/strict_wire.rs"]
+pub mod strict_wire;
 pub mod validators;
 
 pub mod api;
