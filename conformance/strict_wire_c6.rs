@@ -1,3 +1,6 @@
+//! Integration tests for the experimental strict BC-02.1 JSON receipt consumer.
+//! Uses the exact shared C6 wire mutation corpus; never emits a conformance verdict.
+
 use aura_guard::strict_wire::parse_receipt_json;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
