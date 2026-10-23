@@ -1,5 +1,6 @@
 use aura_guard::strict_wire::parse_receipt_json;
 use serde::Deserialize;
+use sha2::{Digest, Sha256};
 use std::{fs, path::PathBuf};
 
 #[derive(Debug, Deserialize)]
@@ -26,6 +27,7 @@ fn corpus() -> Corpus {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("conformance/STAGE-C-C6-BC02.1-WIRE-MUTATIONS-v0.1.json");
     let bytes = fs::read(&path).expect("shared C6 corpus must be available");
+    println!("C6_SHARED_CORPUS_SHA256={}", hex::encode(Sha256::digest(&bytes)));
     let corpus: Corpus = serde_json::from_slice(&bytes).expect("shared C6 corpus must parse");
     assert_eq!(corpus.schema, "AURA-STAGE-C6-BC02.1-WIRE-MUTATION-CORPUS/0.1");
     assert_eq!(corpus.contract, "BC-02.1-COMMON-RECEIPT");
