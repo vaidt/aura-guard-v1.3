@@ -149,3 +149,8 @@ rust_2018_idioms = { level = "warn", priority = -1 }
 
 [lints.clippy]
 all = { level = "deny", priority = -1 }
+
+# Stage C C6 strict BC-02.1 JSON wire consumer experiment (not release gate).
+[[test]]
+name = "strict_wire_c6"
+path = "conformance/strict_wire_c6.rs"
