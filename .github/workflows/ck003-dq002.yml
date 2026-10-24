@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.86.0
+      - uses: dtolnay/rust-toolchain@1.87.0
       - uses: Swatinem/rust-cache@v2
       - name: Run CK-003 RI-RS conformance test
         run: cargo test --locked --test ck003_dq002_ri_rs_conformance -- --nocapture
