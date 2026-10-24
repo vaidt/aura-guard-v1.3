@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/AuraIDToken/aura-guard-v1.3/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/AuraIDToken/aura-guard-v1.3/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Rust](https://img.shields.io/badge/rust-1.86%2B-orange.svg)](https://www.rust-lang.org)
+[![Rust](https://img.shields.io/badge/rust-1.87%2B-orange.svg)](https://www.rust-lang.org)
 [![Posture](https://img.shields.io/badge/posture-fail--closed-red.svg)](docs/THREAT_MODEL.md)
 
 Deterministic audit middleware for AI systems. Produces an append-only,
@@ -48,7 +48,7 @@ input + signed policy  →  decision + chain_hash  →  append-only JSONL
 
 ## Quickstart
 
-Requires Rust 1.86+, `jq` for the smoke test, `openssl` to generate an API
+Requires Rust 1.87+, `jq` for the smoke test, `openssl` to generate an API
 key, and (optionally) Docker.
 
 ```bash
