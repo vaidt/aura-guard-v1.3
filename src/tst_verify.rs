@@ -43,7 +43,6 @@ use der::asn1::{Any, OctetString, SetOfVec};
 use der::oid::db::rfc5912;
 use der::{Decode, Encode, Sequence};
 use sha2::{Digest, Sha256, Sha384, Sha512};
-use signature::hazmat::PrehashVerifier;
 use spki::AlgorithmIdentifierOwned;
 use x509_cert::ext::pkix::ExtendedKeyUsage;
 use x509_cert::Certificate;
@@ -844,6 +843,7 @@ fn verify_ecdsa(
     };
 
     if curve_oid == OID_P256_CURVE {
+        use p256::ecdsa::signature::hazmat::PrehashVerifier as _;
         use p256::ecdsa::{Signature, VerifyingKey};
         let vk = VerifyingKey::from_sec1_bytes(pubkey_bytes)
             .map_err(|e| format!("P-256 pubkey parse: {e}"))?;
@@ -854,6 +854,7 @@ fn verify_ecdsa(
         vk.verify_prehash(hash32, &sig)
             .map_err(|e| format!("P-256 verify: {e}"))
     } else if curve_oid == OID_P384_CURVE {
+        use p384::ecdsa::signature::hazmat::PrehashVerifier as _;
         use p384::ecdsa::{Signature, VerifyingKey};
         let vk = VerifyingKey::from_sec1_bytes(pubkey_bytes)
             .map_err(|e| format!("P-384 pubkey parse: {e}"))?;
@@ -1005,4 +1006,278 @@ fn generalized_time_to_system_time(
 fn systime_rfc3339(t: SystemTime) -> chrono::DateTime<chrono::Utc> {
     let secs = t.duration_since(UNIX_EPOCH).unwrap_or_default().as_secs() as i64;
     chrono::DateTime::<chrono::Utc>::from_timestamp(secs, 0).unwrap_or_default()
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod ecdsa_wycheproof_regression_tests {
+    use super::*;
+    use serde::Deserialize;
+
+    #[derive(Debug, Deserialize)]
+    struct WycheproofFile {
+        algorithm: String,
+        schema: String,
+        #[serde(rename = "numberOfTests")]
+        number_of_tests: usize,
+        #[serde(rename = "testGroups")]
+        test_groups: Vec<WycheproofGroup>,
+    }
+
+    #[derive(Debug, Deserialize)]
+    struct WycheproofGroup {
+        sha: String,
+        #[serde(rename = "publicKeyDer")]
+        public_key_der: String,
+        tests: Vec<WycheproofVector>,
+    }
+
+    #[derive(Debug, Deserialize)]
+    struct WycheproofVector {
+        #[serde(rename = "tcId")]
+        tc_id: u32,
+        comment: String,
+        msg: String,
+        sig: String,
+        result: String,
+    }
+
+    #[derive(Debug, Deserialize)]
+    struct HighLowManifest {
+        pairs: Vec<HighLowPair>,
+    }
+
+    #[derive(Debug, Deserialize)]
+    struct HighLowPair {
+        curve: String,
+        public_key_spki_der: String,
+        message_hex: String,
+        low_s_signature_der: String,
+        high_s_signature_der: String,
+        expected_baseline_low_s: String,
+        expected_baseline_high_s: String,
+    }
+
+    fn run_wycheproof_file(
+        source: &str,
+        expected_sha: &str,
+        curve_oid: &ObjectIdentifier,
+        expected_count: usize,
+        expected_valid: usize,
+        expected_invalid: usize,
+    ) {
+        let data: WycheproofFile =
+            serde_json::from_str(source).expect("pinned Wycheproof JSON parses");
+        assert_eq!(data.algorithm, "ECDSA");
+        assert_eq!(data.schema, "ecdsa_verify_schema_v1.json");
+        assert_eq!(data.number_of_tests, expected_count);
+
+        let mut valid_count = 0usize;
+        let mut invalid_count = 0usize;
+        for group in data.test_groups {
+            assert_eq!(group.sha, expected_sha);
+            let public_key_der =
+                hex::decode(&group.public_key_der).expect("publicKeyDer is valid hex");
+            let spki = spki::SubjectPublicKeyInfoOwned::from_der(&public_key_der)
+                .expect("Wycheproof publicKeyDer is valid SPKI DER");
+            for vector in group.tests {
+                let message = hex::decode(&vector.msg).expect("msg is valid hex");
+                let signature = hex::decode(&vector.sig).expect("sig is valid hex");
+                let result = verify_ecdsa(curve_oid, &message, &signature, &spki);
+                match vector.result.as_str() {
+                    "valid" => {
+                        valid_count += 1;
+                        assert!(
+                            result.is_ok(),
+                            "Wycheproof valid vector tcId={} comment={:?} was rejected: {:?}",
+                            vector.tc_id,
+                            vector.comment,
+                            result.err(),
+                        );
+                    }
+                    "invalid" => {
+                        invalid_count += 1;
+                        assert!(
+                            result.is_err(),
+                            "Wycheproof invalid vector tcId={} comment={:?} was accepted",
+                            vector.tc_id,
+                            vector.comment,
+                        );
+                    }
+                    other => panic!("unexpected Wycheproof result class {other:?}"),
+                }
+            }
+        }
+        assert_eq!(valid_count, expected_valid);
+        assert_eq!(invalid_count, expected_invalid);
+    }
+
+    #[test]
+    fn wycheproof_ecdsa_secp256r1_sha256_baseline() {
+        run_wycheproof_file(
+            include_str!(
+                "../tests/fixtures/crypto-regression/wycheproof/ecdsa_secp256r1_sha256_test.json"
+            ),
+            "SHA-256",
+            &OID_ECDSA_SHA256,
+            484,
+            174,
+            310,
+        );
+    }
+
+    #[test]
+    fn wycheproof_ecdsa_secp384r1_sha384_baseline() {
+        run_wycheproof_file(
+            include_str!(
+                "../tests/fixtures/crypto-regression/wycheproof/ecdsa_secp384r1_sha384_test.json"
+            ),
+            "SHA-384",
+            &OID_ECDSA_SHA384,
+            504,
+            194,
+            310,
+        );
+    }
+
+    fn run_scalar_boundary_vectors(
+        source: &str,
+        expected_sha: &str,
+        curve_oid: &ObjectIdentifier,
+        required_cases: &[(&str, &str)],
+    ) {
+        let data: WycheproofFile =
+            serde_json::from_str(source).expect("pinned Wycheproof JSON parses");
+        let mut found = vec![0usize; required_cases.len()];
+
+        for group in data.test_groups {
+            assert_eq!(group.sha, expected_sha);
+            let public_key_der =
+                hex::decode(&group.public_key_der).expect("publicKeyDer is valid hex");
+            let spki = spki::SubjectPublicKeyInfoOwned::from_der(&public_key_der)
+                .expect("Wycheproof publicKeyDer is valid SPKI DER");
+
+            for vector in group.tests {
+                for (index, (required_comment, expected_result)) in
+                    required_cases.iter().enumerate()
+                {
+                    if vector.comment != *required_comment {
+                        continue;
+                    }
+
+                    found[index] += 1;
+                    assert_eq!(
+                        vector.result, *expected_result,
+                        "upstream expectation drift for boundary vector {:?} (tcId={})",
+                        vector.comment, vector.tc_id
+                    );
+
+                    let message = hex::decode(&vector.msg).expect("msg is valid hex");
+                    let signature = hex::decode(&vector.sig).expect("sig is valid hex");
+                    let actual = verify_ecdsa(curve_oid, &message, &signature, &spki);
+
+                    match *expected_result {
+                        "valid" => assert!(
+                            actual.is_ok(),
+                            "boundary vector {:?} (tcId={}) should verify but was rejected: {:?}",
+                            vector.comment,
+                            vector.tc_id,
+                            actual.err(),
+                        ),
+                        "invalid" => assert!(
+                            actual.is_err(),
+                            "boundary vector {:?} (tcId={}) should be rejected but was accepted",
+                            vector.comment,
+                            vector.tc_id,
+                        ),
+                        other => panic!("unsupported upstream result class {other:?}"),
+                    }
+                }
+            }
+        }
+
+        for (index, (comment, _)) in required_cases.iter().enumerate() {
+            assert!(
+                found[index] > 0,
+                "required scalar-boundary vector was not found in the pinned corpus: {comment:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn p256_r_and_s_scalar_boundaries_are_explicitly_regressed() {
+        run_scalar_boundary_vectors(
+            include_str!(
+                "../tests/fixtures/crypto-regression/wycheproof/ecdsa_secp256r1_sha256_test.json"
+            ),
+            "SHA-256",
+            &OID_ECDSA_SHA256,
+            &[
+                ("replacing r with zero", "invalid"),
+                ("replacing s with zero", "invalid"),
+                ("r is larger than n", "invalid"),
+                ("s is larger than n", "invalid"),
+                ("s == 1", "valid"),
+                ("s == 0", "invalid"),
+                ("r = n - 3, x = n - 2 is invalid", "invalid"),
+                ("s = n - 2^128", "valid"),
+            ],
+        );
+    }
+
+    #[test]
+    fn p384_r_and_s_scalar_boundaries_are_explicitly_regressed() {
+        run_scalar_boundary_vectors(
+            include_str!(
+                "../tests/fixtures/crypto-regression/wycheproof/ecdsa_secp384r1_sha384_test.json"
+            ),
+            "SHA-384",
+            &OID_ECDSA_SHA384,
+            &[
+                ("replacing r with zero", "invalid"),
+                ("replacing s with zero", "invalid"),
+                ("r is larger than n", "invalid"),
+                ("s is larger than n", "invalid"),
+                ("s == 1", "valid"),
+                ("s == 0", "invalid"),
+                ("r = n - 2, x = n - 1 is invalid", "invalid"),
+                ("s = n - 2^128", "valid"),
+            ],
+        );
+    }
+
+    #[test]
+    fn high_s_and_low_s_equivalent_signatures_record_baseline_policy() {
+        let manifest: HighLowManifest = serde_json::from_str(include_str!(
+            "../tests/fixtures/crypto-regression/ecdsa-high-low-s.json"
+        ))
+        .expect("high/low-S manifest parses");
+        assert_eq!(manifest.pairs.len(), 2);
+
+        for pair in manifest.pairs {
+            assert_eq!(pair.expected_baseline_low_s, "ACCEPT");
+            assert_eq!(pair.expected_baseline_high_s, "ACCEPT");
+            let oid = match pair.curve.as_str() {
+                "P-256" => &OID_ECDSA_SHA256,
+                "P-384" => &OID_ECDSA_SHA384,
+                other => panic!("unsupported curve in high/low-S manifest: {other}"),
+            };
+            let key_der = hex::decode(&pair.public_key_spki_der).expect("SPKI hex");
+            let spki = spki::SubjectPublicKeyInfoOwned::from_der(&key_der).expect("SPKI DER");
+            let message = hex::decode(&pair.message_hex).expect("message hex");
+            let low_s = hex::decode(&pair.low_s_signature_der).expect("low-S DER hex");
+            let high_s = hex::decode(&pair.high_s_signature_der).expect("high-S DER hex");
+
+            assert!(
+                verify_ecdsa(oid, &message, &low_s, &spki).is_ok(),
+                "{} low-S equivalent should verify on the baseline",
+                pair.curve,
+            );
+            assert!(
+                verify_ecdsa(oid, &message, &high_s, &spki).is_ok(),
+                "{} high-S equivalent should verify on the baseline; the result records pre-migration behavior",
+                pair.curve,
+            );
+        }
+    }
 }

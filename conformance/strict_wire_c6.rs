@@ -4,6 +4,9 @@
 //! preflight supplies the exact shared corpus, expected source pins and result
 //! directory, and enables it with --include-ignored.
 
+// This non-production conformance harness uses panic-on-fixture-failure assertions by design.
+#![allow(clippy::expect_used, clippy::unwrap_used)]
+
 use aura_guard::strict_wire::parse_receipt_json;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -36,8 +39,8 @@ fn c6_shared_wire_corpus_matches_expected_receipt_contract() {
         .expect("C6 workflow must set AURA_RI_RS_SOURCE_BLOB");
     let lib_blob =
         std::env::var("AURA_RI_RS_LIB_BLOB").expect("C6 workflow must set AURA_RI_RS_LIB_BLOB");
-    let cargo_blob = std::env::var("AURA_RI_RS_CARGO_BLOB")
-        .expect("C6 workflow must set AURA_RI_RS_CARGO_BLOB");
+    let cargo_blob =
+        std::env::var("AURA_RI_RS_CARGO_BLOB").expect("C6 workflow must set AURA_RI_RS_CARGO_BLOB");
     let test_blob =
         std::env::var("AURA_RI_RS_TEST_BLOB").expect("C6 workflow must set AURA_RI_RS_TEST_BLOB");
 
@@ -106,7 +109,11 @@ fn c6_shared_wire_corpus_matches_expected_receipt_contract() {
     }
 
     let index_sha = sha256_hex(&index_raw);
-    let status = if mismatches.is_empty() { "PASS" } else { "MISMATCH" };
+    let status = if mismatches.is_empty() {
+        "PASS"
+    } else {
+        "MISMATCH"
+    };
     let report = json!({
         "schema": "AURA-BC021-WIRE-CONSUMER-RESULTS/0.1",
         "status": status,
@@ -129,7 +136,10 @@ fn c6_shared_wire_corpus_matches_expected_receipt_contract() {
     fs::create_dir_all(&results_dir).expect("create results directory");
     fs::write(
         results_dir.join("ri-rs-results.json"),
-        format!("{}\n", serde_json::to_string_pretty(&report).expect("serialize report")),
+        format!(
+            "{}\n",
+            serde_json::to_string_pretty(&report).expect("serialize report")
+        ),
     )
     .expect("write RI-RS result report");
 

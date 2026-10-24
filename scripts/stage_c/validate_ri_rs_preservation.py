@@ -1,4 +1,4 @@
-import json, hashlib, os, pathlib, sys
+import json, hashlib, os, pathlib, re, sys
 
 root = pathlib.Path("aura-specification/artifacts/stage-c/c6-wire-corpus")
 report_path = root / "results/ri-rs-results.json"
@@ -58,7 +58,41 @@ def parse_json_bytes(raw, label):
     except Exception as exc:
         return None, f"{label}_json_parse_error:{type(exc).__name__}:{exc}"
 
+def git_blob_oid(raw):
+    # Match Git's object identity: SHA-1("blob <length>\0" + exact file bytes).
+    header = f"blob {len(raw)}\0".encode("ascii")
+    return hashlib.sha1(header + raw).hexdigest()
+
+def record_source_identity(label, path, env_name):
+    path = pathlib.Path(path)
+    if not path.is_file():
+        errors.append(f"missing_source_file:{label}:{path}")
+        return {"path": str(path), "git_blob_oid": None, "content_sha256": None}
+    raw = path.read_bytes()
+    actual_oid = git_blob_oid(raw)
+    content_digest = hashlib.sha256(raw).hexdigest()
+    pinned_oid = os.environ.get(env_name)
+    if not isinstance(pinned_oid, str) or re.fullmatch(r"[0-9a-f]{40}", pinned_oid) is None:
+        errors.append(f"invalid_git_blob_oid:{label}:{env_name}")
+    elif pinned_oid != actual_oid:
+        errors.append(f"git_blob_oid_mismatch:{label}:{pinned_oid}:{actual_oid}")
+    print(f"SOURCE_PATH={path}")
+    print(f"SOURCE_GIT_BLOB_OID={actual_oid}")
+    print(f"SOURCE_CONTENT_SHA256={content_digest}")
+    return {"path": str(path), "git_blob_oid": actual_oid, "content_sha256": content_digest}
+
 def negative_fixture_self_test():
+    raw_fixture = b"Git blob identity self-test"
+    oid = git_blob_oid(raw_fixture)
+    if re.fullmatch(r"[0-9a-f]{40}", oid) is None:
+        raise RuntimeError("Git blob OID must be a 40-character lowercase hex identifier")
+    if git_blob_oid(raw_fixture + b"!") == oid:
+        raise RuntimeError("Git blob OID must change when exact source bytes change")
+    content_sha = hashlib.sha256(raw_fixture).hexdigest()
+    if re.fullmatch(r"[0-9a-f]{64}", content_sha) is None or content_sha == oid:
+        raise RuntimeError("content SHA-256 must be recorded separately from the Git blob OID")
+    print("SOURCE_IDENTITY_SELF_TEST_PASS=3")
+
     base_index = {"schema":"AURA-BC021-MATERIALIZED-WIRE-CORPUS/0.1","case_count":1,"cases":[{"id":"C6-W-000"}]}
     base_report = {"schema":"AURA-BC021-WIRE-CONSUMER-RESULTS/0.1","status":"PASS","source_commit":"fixture-sha","index_sha256":"fixture-index-sha","case_count":1,"cases":[{"id":"C6-W-000","matched":True}]}
     if validate(base_report, base_index, "fixture-index-sha", "fixture-sha"):
@@ -96,7 +130,22 @@ def record_file(path):
     print(f"PRESERVE_SHA256={digest}")
     return raw, digest
 
+source_identities = {}
 try:
+    source_identities = {
+        "consumer": record_source_identity(
+            "consumer", "conformance/strict_wire.rs", "AURA_RI_RS_SOURCE_BLOB"
+        ),
+        "library": record_source_identity(
+            "library", "src/lib.rs", "AURA_RI_RS_LIB_BLOB"
+        ),
+        "cargo_manifest": record_source_identity(
+            "cargo_manifest", "Cargo.toml", "AURA_RI_RS_CARGO_BLOB"
+        ),
+        "consumer_test": record_source_identity(
+            "consumer_test", "conformance/strict_wire_c6.rs", "AURA_RI_RS_TEST_BLOB"
+        ),
+    }
     report_raw, report_sha = record_file(report_path)
     index_raw, index_sha = record_file(index_path)
     report, report_error = parse_json_bytes(report_raw, "report") if report_raw else (None,None)
@@ -110,8 +159,9 @@ except Exception as exc:
     preservation_status = "FAIL"
 
 diagnostics = {
-    "schema":"AURA-C6-RI-RS-PRESERVATION-DIAGNOSTICS/0.2",
+    "schema":"AURA-C6-RI-RS-PRESERVATION-DIAGNOSTICS/0.3",
     "tested_source_commit":expected_commit,
+    "source_blob_identity":source_identities,
     "report_path":str(report_path),
     "index_path":str(index_path),
     "report_byte_count":len(report_raw),
@@ -125,14 +175,18 @@ diagnostics = {
     "errors":errors,
 }
 evidence = {
-    "schema":"AURA-C6-IMPLEMENTATION-EVIDENCE/0.4",
+    "schema":"AURA-C6-IMPLEMENTATION-EVIDENCE/0.5",
     "component":"RI-RS-AURA-GUARD-STRICT-BC021-CONSUMER",
     "repository":"vaidt/aura-guard-v1.3",
     "tested_source_commit":expected_commit,
-    "consumer_blob_sha256":os.environ.get("AURA_RI_RS_SOURCE_BLOB"),
-    "lib_blob_sha256":os.environ.get("AURA_RI_RS_LIB_BLOB"),
-    "cargo_blob_sha256":os.environ.get("AURA_RI_RS_CARGO_BLOB"),
-    "test_blob_sha256":os.environ.get("AURA_RI_RS_TEST_BLOB"),
+    "consumer_git_blob_oid":source_identities.get("consumer", {}).get("git_blob_oid"),
+    "consumer_content_sha256":source_identities.get("consumer", {}).get("content_sha256"),
+    "lib_git_blob_oid":source_identities.get("library", {}).get("git_blob_oid"),
+    "lib_content_sha256":source_identities.get("library", {}).get("content_sha256"),
+    "cargo_git_blob_oid":source_identities.get("cargo_manifest", {}).get("git_blob_oid"),
+    "cargo_content_sha256":source_identities.get("cargo_manifest", {}).get("content_sha256"),
+    "test_git_blob_oid":source_identities.get("consumer_test", {}).get("git_blob_oid"),
+    "test_content_sha256":source_identities.get("consumer_test", {}).get("content_sha256"),
     "shared_index_sha256":index_sha,
     "consumer_report_sha256":report_sha,
     "consumer_report_bytes":len(report_raw),

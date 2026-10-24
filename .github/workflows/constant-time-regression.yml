@@ -1,0 +1,56 @@
+name: ECC constant-time regression
+
+on:
+  pull_request:
+    paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "src/tst_verify.rs"
+      - ".github/workflows/constant-time-regression.yml"
+  push:
+    branches:
+      - "security/ecc-stack-migration-rustsec-2026-0387"
+    paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "src/tst_verify.rs"
+      - ".github/workflows/constant-time-regression.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  crypto-bigint-upstream-checkct:
+    name: Upstream crypto-bigint 0.7.7 BINSEC regression
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Checkout the exact resolved crypto-bigint source revision
+        uses: actions/checkout@v4
+        with:
+          repository: RustCrypto/crypto-bigint
+          ref: f17d82ad761de4140c6c22f835ddaead1a434f57
+          path: crypto-bigint-source
+      - name: Verify source version matches the resolved lockfile package
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Eq '^version = "0\.7\.7"$' crypto-bigint-source/Cargo.toml
+          grep -Eq '^rust-version = "1\.87"$' crypto-bigint-source/Cargo.toml
+          python3 - <<'PY'
+          import tomllib
+          from pathlib import Path
+          lock = tomllib.loads(Path("Cargo.lock").read_text(encoding="utf-8"))
+          versions = sorted({p["version"] for p in lock["package"] if p["name"] == "crypto-bigint"})
+          assert versions == ["0.7.7"], f"unexpected crypto-bigint lock versions: {versions}"
+          print("Resolved crypto-bigint version:", versions[0])
+          PY
+      - name: Run upstream BINSEC control-flow and memory-access analysis
+        uses: Ledger-Donjon/cargo-checkct@85271e5ce9eab9ba895c62c8b5d4129810a635a0
+        with:
+          directory: crypto-bigint-source
+          timeout: 120
+          checks: control-flow,memory-access
+          skip-unknown: false
+          all-leaks: true

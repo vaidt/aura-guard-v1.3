@@ -5,6 +5,9 @@
 //! workflow supplies both and invokes this target explicitly. Runtime source
 //! and production dependency semantics are unchanged.
 
+// This non-production conformance harness uses panic-on-fixture-failure assertions by design.
+#![allow(clippy::expect_used, clippy::unwrap_used)]
+
 use aura_guard::merkle::{
     audit_path, empty_root, leaf_hash, merkle_root, node_hash, verify_audit_path,
 };
