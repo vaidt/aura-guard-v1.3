@@ -100,9 +100,9 @@ spki = { version = "0.7", default-features = false, features = ["std"] }
 der = { version = "0.7", default-features = false, features = ["std", "oid"] }
 const-oid = { version = "0.9", default-features = false, features = ["std", "db"] }
 rsa = { version = "0.9", default-features = false, features = ["std", "sha2"] }
-p256 = { version = "0.13", default-features = false, features = ["std", "ecdsa", "pkcs8"] }
-p384 = { version = "0.13", default-features = false, features = ["std", "ecdsa", "pkcs8"] }
-ecdsa = { version = "0.16", default-features = false, features = ["der"] }
+p256 = { version = "=0.14.0", default-features = false, features = ["std", "ecdsa", "pkcs8"] }
+p384 = { version = "=0.14.0", default-features = false, features = ["std", "ecdsa", "pkcs8"] }
+ecdsa = { version = "=0.17.0", default-features = false, features = ["der"] }
 signature = "2"
 
 [dev-dependencies]
