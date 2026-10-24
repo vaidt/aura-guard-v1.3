@@ -223,7 +223,7 @@ jobs:
               "interpretation": "Exact equality of the four preserved C6 evidence members across x86_64 and aarch64; this is not proof of general constant-time behavior.",
           }
           out = Path("strict-wire-cross-arch-determinism.json")
-          out.write_text(json.dumps(result, indent=2, sort_keys=True) + "\\n", encoding="utf-8")
+          out.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
           print(out.read_text(encoding="utf-8"))
           PY
 
