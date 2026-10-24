@@ -216,11 +216,7 @@ pub fn parse_receipt_json(raw_json: &[u8]) -> Result<BoundaryReceipt, ReceiptPar
         &["fixture_id", "fixture_artifact_identity"],
         "fixture",
     )?;
-    let mut handoff = take_object(
-        take(&mut top, "handoff"),
-        &["status", "method"],
-        "handoff",
-    )?;
+    let mut handoff = take_object(take(&mut top, "handoff"), &["status", "method"], "handoff")?;
     let mut received = take_object(
         take(&mut top, "received"),
         &["octet_length", "raw_octets", "recomputed_sha256"],
@@ -273,14 +269,15 @@ pub fn parse_receipt_json(raw_json: &[u8]) -> Result<BoundaryReceipt, ReceiptPar
     let status = HandoffStatus::parse(&status_text)?;
     let method = required_string(take(&mut handoff, "method"), "handoff.method")?;
 
-    let octet_length = required_usize(take(&mut received, "octet_length"), "received.octet_length")?;
-    let encoded_octets = required_string_allow_empty(
-        take(&mut received, "raw_octets"),
-        "received.raw_octets",
-    )?;
-    let raw_octets = BC021_BASE64.decode(encoded_octets.as_bytes()).map_err(|_| {
-        ReceiptParseError::new("INVALID_BASE64", "received.raw_octets is not strict Base64")
-    })?;
+    let octet_length =
+        required_usize(take(&mut received, "octet_length"), "received.octet_length")?;
+    let encoded_octets =
+        required_string_allow_empty(take(&mut received, "raw_octets"), "received.raw_octets")?;
+    let raw_octets = BC021_BASE64
+        .decode(encoded_octets.as_bytes())
+        .map_err(|_| {
+            ReceiptParseError::new("INVALID_BASE64", "received.raw_octets is not strict Base64")
+        })?;
     if BC021_BASE64.encode(&raw_octets) != encoded_octets {
         return Err(ReceiptParseError::new(
             "INVALID_BASE64",
@@ -311,10 +308,8 @@ pub fn parse_receipt_json(raw_json: &[u8]) -> Result<BoundaryReceipt, ReceiptPar
         ));
     }
 
-    let receiver_id = required_semantic_string(
-        take(&mut receiver, "receiver_id"),
-        "receiver.receiver_id",
-    )?;
+    let receiver_id =
+        required_semantic_string(take(&mut receiver, "receiver_id"), "receiver.receiver_id")?;
     let implementation_id = required_semantic_string(
         take(&mut receiver, "implementation_id"),
         "receiver.implementation_id",
@@ -329,7 +324,8 @@ pub fn parse_receipt_json(raw_json: &[u8]) -> Result<BoundaryReceipt, ReceiptPar
         "receiver.source_commit",
     )?;
 
-    let adapter_id = required_semantic_string(take(&mut adapter, "adapter_id"), "adapter.adapter_id")?;
+    let adapter_id =
+        required_semantic_string(take(&mut adapter, "adapter_id"), "adapter.adapter_id")?;
     let adapter_version = required_semantic_string(
         take(&mut adapter, "adapter_version"),
         "adapter.adapter_version",
@@ -339,20 +335,28 @@ pub fn parse_receipt_json(raw_json: &[u8]) -> Result<BoundaryReceipt, ReceiptPar
         take(&mut environment, "environment_id"),
         "environment.environment_id",
     )?;
-    let platform = required_semantic_string(take(&mut environment, "platform"), "environment.platform")?;
-    let runtime = required_semantic_string(take(&mut environment, "runtime"), "environment.runtime")?;
+    let platform =
+        required_semantic_string(take(&mut environment, "platform"), "environment.platform")?;
+    let runtime =
+        required_semantic_string(take(&mut environment, "runtime"), "environment.runtime")?;
 
     // BC-02.1 R-INV-04: semantic receipt values must not carry a result verdict.
     // Base64 transport text, hashes and fixed schema identifiers are not semantic
     // result fields and are therefore not scanned as ordinary string values.
     for (field, value) in [
         ("fixture.fixture_id", fixture_id.as_str()),
-        ("fixture.fixture_artifact_identity", fixture_artifact_identity.as_str()),
+        (
+            "fixture.fixture_artifact_identity",
+            fixture_artifact_identity.as_str(),
+        ),
         ("handoff.method", method.as_str()),
         ("receiver.receiver_id", receiver_id.as_str()),
         ("receiver.implementation_id", implementation_id.as_str()),
         ("receiver.language", language.as_str()),
-        ("receiver.implementation_version", implementation_version.as_str()),
+        (
+            "receiver.implementation_version",
+            implementation_version.as_str(),
+        ),
         ("receiver.source_commit", source_commit.as_str()),
         ("adapter.adapter_id", adapter_id.as_str()),
         ("adapter.adapter_version", adapter_version.as_str()),
@@ -383,10 +387,7 @@ pub fn parse_receipt_json(raw_json: &[u8]) -> Result<BoundaryReceipt, ReceiptPar
             fixture_id,
             fixture_artifact_identity,
         },
-        handoff: Handoff {
-            status,
-            method,
-        },
+        handoff: Handoff { status, method },
         received: ReceivedMaterial {
             octet_length,
             raw_octets,
@@ -413,7 +414,10 @@ pub fn parse_receipt_json(raw_json: &[u8]) -> Result<BoundaryReceipt, ReceiptPar
 
 fn reject_result_value(field: &str, value: &str) -> Result<(), ReceiptParseError> {
     const FORBIDDEN: [&str; 4] = ["PASS", "FAIL", "CONFORMANT", "NON_CONFORMANT"];
-    if FORBIDDEN.iter().any(|candidate| value.eq_ignore_ascii_case(candidate)) {
+    if FORBIDDEN
+        .iter()
+        .any(|candidate| value.eq_ignore_ascii_case(candidate))
+    {
         return Err(ReceiptParseError::new(
             "INVALID_VALUE",
             format!("{field} contains a prohibited result-authority value"),
@@ -587,7 +591,8 @@ fn take_object(
 }
 
 fn take(map: &mut BTreeMap<String, StrictJsonValue>, key: &str) -> StrictJsonValue {
-    map.remove(key).expect("exact BC-02.1 field set checked before extraction")
+    map.remove(key)
+        .expect("exact BC-02.1 field set checked before extraction")
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -735,7 +740,10 @@ mod tests {
         let receipt = parse_receipt_json(&valid_receipt(&octets)).expect("valid receipt");
         assert_eq!(receipt.received.raw_octets, octets);
         assert_eq!(receipt.received.octet_length, octets.len());
-        assert_eq!(receipt.received.recomputed_sha256, hex_lower(&Sha256::digest(octets)));
+        assert_eq!(
+            receipt.received.recomputed_sha256,
+            hex_lower(&Sha256::digest(octets))
+        );
     }
 
     #[test]
@@ -754,7 +762,10 @@ mod tests {
             "\"schema_id\":\"BC-02.1-COMMON-RECEIPT\",\"schema_id\":\"BC-02.1-COMMON-RECEIPT\"",
             1,
         );
-        assert_eq!(parse_receipt_json(duplicate.as_bytes()).unwrap_err().code, "DUPLICATE_KEY");
+        assert_eq!(
+            parse_receipt_json(duplicate.as_bytes()).unwrap_err().code,
+            "DUPLICATE_KEY"
+        );
     }
 
     #[test]
@@ -766,6 +777,9 @@ mod tests {
             "\"schema_id\":\"BC-02.1-COMMON-RECEIPT\",\"conformance_result\":\"PASS\"",
             1,
         );
-        assert_eq!(parse_receipt_json(extra.as_bytes()).unwrap_err().code, "UNKNOWN_FIELD");
+        assert_eq!(
+            parse_receipt_json(extra.as_bytes()).unwrap_err().code,
+            "UNKNOWN_FIELD"
+        );
     }
 }
