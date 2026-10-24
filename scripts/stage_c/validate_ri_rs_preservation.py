@@ -59,8 +59,8 @@ def parse_json_bytes(raw, label):
         return None, f"{label}_json_parse_error:{type(exc).__name__}:{exc}"
 
 def git_blob_oid(raw):
-    # Match Git's object identity: SHA-1("blob <length>\\0" + exact file bytes).
-    header = f"blob {len(raw)}\\0".encode("ascii")
+    # Match Git's object identity: SHA-1("blob <length>\0" + exact file bytes).
+    header = f"blob {len(raw)}\0".encode("ascii")
     return hashlib.sha1(header + raw).hexdigest()
 
 def record_source_identity(label, path, env_name):
@@ -82,6 +82,17 @@ def record_source_identity(label, path, env_name):
     return {"path": str(path), "git_blob_oid": actual_oid, "content_sha256": content_digest}
 
 def negative_fixture_self_test():
+    raw_fixture = b"Git blob identity self-test"
+    oid = git_blob_oid(raw_fixture)
+    if re.fullmatch(r"[0-9a-f]{40}", oid) is None:
+        raise RuntimeError("Git blob OID must be a 40-character lowercase hex identifier")
+    if git_blob_oid(raw_fixture + b"!") == oid:
+        raise RuntimeError("Git blob OID must change when exact source bytes change")
+    content_sha = hashlib.sha256(raw_fixture).hexdigest()
+    if re.fullmatch(r"[0-9a-f]{64}", content_sha) is None or content_sha == oid:
+        raise RuntimeError("content SHA-256 must be recorded separately from the Git blob OID")
+    print("SOURCE_IDENTITY_SELF_TEST_PASS=3")
+
     base_index = {"schema":"AURA-BC021-MATERIALIZED-WIRE-CORPUS/0.1","case_count":1,"cases":[{"id":"C6-W-000"}]}
     base_report = {"schema":"AURA-BC021-WIRE-CONSUMER-RESULTS/0.1","status":"PASS","source_commit":"fixture-sha","index_sha256":"fixture-index-sha","case_count":1,"cases":[{"id":"C6-W-000","matched":True}]}
     if validate(base_report, base_index, "fixture-index-sha", "fixture-sha"):
