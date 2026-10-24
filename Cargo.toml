@@ -142,6 +142,14 @@ path = "conformance/stage_c_jcs_probe.rs"
 name = "stage_c_merkle_c5"
 path = "conformance/stage_c_merkle_c5.rs"
 
+
+# Stage C C6 strict BC-02.1 receipt wire-consumer test harness.
+# The corpus test is ignored by default and is enabled only by the pinned,
+# read-only C6 preflight workflow with the exact shared mutation corpus.
+[[test]]
+name = "stage_c_c6_receipt_consumer"
+path = "conformance/stage_c_c6_receipt_consumer.rs"
+
 [lints.rust]
 unsafe_code = "forbid"
 missing_docs = "warn"
