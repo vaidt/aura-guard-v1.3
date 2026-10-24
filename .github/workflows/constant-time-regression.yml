@@ -27,6 +27,8 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Checkout the exact resolved crypto-bigint source revision
         uses: actions/checkout@v4
         with:
