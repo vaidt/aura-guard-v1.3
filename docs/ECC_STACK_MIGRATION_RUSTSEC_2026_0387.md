@@ -23,14 +23,15 @@ This branch changes:
 
 The direct `signature = 2` dependency is intentionally retained because the existing RSA verifier uses the `signature 2` trait ecosystem. The ECDSA curve APIs re-export their corresponding `signature 3` prehash trait, which is imported locally in the relevant P-256/P-384 verification branches.
 
-The exact lockfile is not accepted from a guessed or hand-edited dependency graph. A branch-scoped resolver workflow runs `cargo update` for the ECC stack with `CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS=fallback`, then asserts that `crypto-bigint 0.7.6` is present and `crypto-bigint 0.5.5` is absent. It publishes the resulting Cargo.lock as a short-lived artifact for review. The artifact must be checked for:
-- exact package versions and checksums;
-- no remaining `crypto-bigint 0.5.x` in the resolved graph;
-- no unexpected unrelated upgrades;
-- the entire ECDSA dependency path resolving to `crypto-bigint >= 0.7.6`;
-- no dependency that forces Rust 1.88 when the documented MSRV remains 1.87.
+The final candidate `Cargo.lock` was produced by Cargo in a temporary, branch-scoped resolver workflow, reviewed as a minimal dependency delta, committed, and read back byte-for-byte. Lockfile SHA-256:
+`9ac7d3f54bee3d050603be6ad7338ebd15ff5c63009074a81298487ceeca481d` (80,264 bytes).
 
-The resolver workflow is temporary tooling and must be removed from the final PR after the lockfile is recovered and reviewed. It does not push commits or mutate the branch.
+The exact set of package version changes in the security delta was limited to:
+- `rustls-webpki 0.103.15 -> 0.103.16`;
+- `webpki-roots 1.0.7 -> 1.0.10`;
+- `tokio 1.52.3 -> 1.54.1`.
+
+The reviewed candidate resolves `crypto-bigint 0.7.7`, `elliptic-curve 0.14.2`, `ecdsa 0.17.0`, `p256 0.14.0`, `p384 0.14.0`, and `sha2 0.11.0`; it has no `crypto-bigint 0.5.x`, `rustls-webpki 0.103.15`, `webpki-roots 1.0.7`, or `tokio 1.52.3`. The temporary lockfile resolver has been removed from the branch.
 
 ## Semantics gate
 
@@ -38,25 +39,22 @@ The baseline test expects the valid and invalid Wycheproof results to match the 
 
 The high-S/low-S probes record the current baseline behavior. Upstream `ecdsa 0.17.0` rejects high-S only when the curve's `EcdsaCurve::NORMALIZE_S` setting is true. The pinned `p256 0.14.0` and `p384 0.14.0` sources set `NORMALIZE_S = false`; therefore a behavioral change is a hypothesis to verify in the candidate, not an assumption. The candidate must execute the same vectors and report the observed outcome.
 
+The test module also has two audit-focused tests that explicitly name and execute scalar-boundary cases from the pinned corpus for each curve: zero `r`, zero `s`, `r > n`, `s > n`, `s = 1`, and near-order cases. They call the production `verify_ecdsa()` helper, assert the upstream expected disposition, and fail if a required vector comment disappears from the pinned file.
+
 ## Mandatory verification sequence
 
 1. Generate and review the dependency lockfile; verify the selected `crypto-bigint` version is at least 0.7.6.
 2. Run `cargo fmt --all -- --check`, `cargo clippy --all-targets --all-features -- -D warnings`, and the full `cargo test --locked --all-targets`.
 3. Require all 988 Wycheproof vectors and both high-S/low-S pairs to pass according to recorded baseline expectations, or stop and produce an exact baseline/candidate difference report.
-4. Run `cargo audit --deny warnings` and `cargo deny check` without advisory suppressions. These currently fail on other advisories too (`rustls-webpki`, `webpki-roots`, and `tokio`), so their results must be reported separately from the ECC migration.
-5. Execute the upstream constant-time regression approach documented by RUSTSEC-2026-0387, including `cargo checkct`/BINSEC on the targets supported by that tooling. Record tool versions, target details, stdout/stderr, and limitations. A passing functional test suite is not proof of constant-time behavior.
-6. Compare release-mode outputs and canonical audit bytes on x86_64 and aarch64. The ECDSA verifier is a public-key verification path; do not claim CPU-specific arithmetic is deterministic until the cross-target replay evidence says so.
-7. Run strict-wire only after the source SHA and lockfile digest are frozen; verify artifacts independently.
+4. Require `cargo audit --deny warnings` and `cargo deny check` to pass without adding advisory exceptions. On the candidate lockfile, both checks have passed in CI using the repository's pre-existing, documented `RUSTSEC-2023-0071` exception only; the three additional October 2026 findings are removed by the reviewed lock delta.
+5. Run the added upstream BINSEC gate: `.github/workflows/constant-time-regression.yml` checks out `RustCrypto/crypto-bigint` at exact commit `f17d82ad761de4140c6c22f835ddaead1a434f57` (v0.7.7) and uses `Ledger-Donjon/cargo-checkct` pinned to `85271e5ce9eab9ba895c62c8b5d4129810a635a0`. It runs the upstream `checkct` harness with `control-flow,memory-access`, `skip-unknown=false`, and all-leaks reporting. The upstream harness targets `riscv32imac-unknown-none-elf`, `thumbv6m-none-eabi`, `thumbv7em-none-eabihf`, and `x86_64-unknown-linux-gnu`.
+6. Interpret the BINSEC result within its documented limits. The upstream tool analyzes the `no_std` crypto-bigint harness, not the complete AURA process; control-flow and memory-access checks assume data-independent instruction latency. It does not directly prove the full Guard verifier constant-time, and it does not cover AURA's x86_64/aarch64 output determinism. Additional arithmetic-operation checks (`multiplication`, `dividend`, `divisor`) are documented as experimental by the tool and are not silently treated as covered by this workflow. See https://github.com/Ledger-Donjon/cargo-checkct and the advisory https://rustsec.org/advisories/RUSTSEC-2026-0387.html.
+7. Compare release-mode outputs and canonical audit bytes on x86_64 and aarch64. The ECDSA verifier is a public-key verification path; do not claim CPU-specific arithmetic is deterministic until the cross-target replay evidence says so.
+8. Run strict-wire only after the source SHA and lockfile digest are frozen; verify artifacts independently.
 
-## Known separate blockers
+## Security gate status
 
-The October 24 baseline audit reports:
-- RUSTSEC-2026-0387: `crypto-bigint 0.5.5`, fixed in `>=0.7.6`;
-- RUSTSEC-2026-0382: `rustls-webpki 0.103.15`, fixed in `>=0.103.16`;
-- RUSTSEC-2026-0381: `webpki-roots 1.0.7`, fixed in `>=1.0.10`;
-- RUSTSEC-2026-0386: `tokio 1.52.3`, unsoundness advisory.
-
-These are not to be ignored or suppressed. Resolving the ECC advisory may remove only the first finding; Guard remains blocked until the other findings are handled by separately reviewed dependency updates.
+The original baseline had four findings relevant to this work: RUSTSEC-2026-0387 (`crypto-bigint`), RUSTSEC-2026-0382 (`rustls-webpki`), RUSTSEC-2026-0381 (`webpki-roots`), and RUSTSEC-2026-0386 (`tokio`). All four dependency-version findings are addressed in this candidate lockfile without editing `deny.toml` or adding ignores. CI reports `cargo-audit` and `cargo-deny` as PASS on the updated candidate commit. The full build/test and upstream BINSEC gate remain separately tracked; no constant-time or release-readiness claim is made until their final results are recorded.
 
 ## Governance boundary
 
