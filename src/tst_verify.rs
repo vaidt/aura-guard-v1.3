@@ -43,7 +43,6 @@ use der::asn1::{Any, OctetString, SetOfVec};
 use der::oid::db::rfc5912;
 use der::{Decode, Encode, Sequence};
 use sha2::{Digest, Sha256, Sha384, Sha512};
-use signature::hazmat::PrehashVerifier;
 use spki::AlgorithmIdentifierOwned;
 use x509_cert::ext::pkix::ExtendedKeyUsage;
 use x509_cert::Certificate;
@@ -844,6 +843,7 @@ fn verify_ecdsa(
     };
 
     if curve_oid == OID_P256_CURVE {
+        use p256::ecdsa::signature::hazmat::PrehashVerifier as _;
         use p256::ecdsa::{Signature, VerifyingKey};
         let vk = VerifyingKey::from_sec1_bytes(pubkey_bytes)
             .map_err(|e| format!("P-256 pubkey parse: {e}"))?;
@@ -854,6 +854,7 @@ fn verify_ecdsa(
         vk.verify_prehash(hash32, &sig)
             .map_err(|e| format!("P-256 verify: {e}"))
     } else if curve_oid == OID_P384_CURVE {
+        use p384::ecdsa::signature::hazmat::PrehashVerifier as _;
         use p384::ecdsa::{Signature, VerifyingKey};
         let vk = VerifyingKey::from_sec1_bytes(pubkey_bytes)
             .map_err(|e| format!("P-384 pubkey parse: {e}"))?;
