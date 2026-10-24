@@ -20,7 +20,7 @@ on:
   workflow_dispatch:
     inputs:
       target_ref:
-        description: "Exact RI-RS source ref/SHA to test"
+        description: "Exact RI-RS source SHA or ref to test"
         required: true
         type: string
 
@@ -34,10 +34,10 @@ jobs:
       CARGO_TERM_COLOR: always
       RUST_BACKTRACE: 1
     steps:
-      - name: Check out exact RI-RS pull-request head
+      - name: Check out exact RI-RS source
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.target_ref || github.event.pull_request.head.sha || github.sha }}
 
       - uses: dtolnay/rust-toolchain@1.86.0
 
@@ -56,8 +56,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
-          echo "AURA_RI_RS_COMMIT=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+          expected_ref="${{ github.event_name == 'workflow_dispatch' && inputs.target_ref || github.event.pull_request.head.sha || github.sha }}"
+          actual_sha="$(git rev-parse HEAD)"
+          test "$actual_sha" = "$(git rev-parse "$expected_ref^{commit}")"
+          echo "AURA_RI_RS_COMMIT=$actual_sha" >> "$GITHUB_ENV"
           echo "AURA_RI_RS_SOURCE_BLOB=$(git rev-parse HEAD:conformance/strict_wire.rs)" >> "$GITHUB_ENV"
           echo "AURA_RI_RS_LIB_BLOB=$(git rev-parse HEAD:src/lib.rs)" >> "$GITHUB_ENV"
           echo "AURA_RI_RS_CARGO_BLOB=$(git rev-parse HEAD:Cargo.toml)" >> "$GITHUB_ENV"
@@ -120,8 +122,6 @@ jobs:
           try:
               report_raw, report_sha = record_file(report_path)
               index_raw, index_sha = record_file(index_path)
-
-              # Parse exactly the bytes whose hash/length were recorded above.
               if report_raw:
                   try:
                       report = json.loads(report_raw.decode("utf-8"))
@@ -164,9 +164,7 @@ jobs:
                   if report.get("status") != "PASS":
                       errors.append("consumer_report_not_pass")
 
-                  # Validate shared index identity against the parsed report.
-                  idx_schema = index.get("schema")
-                  if not isinstance(idx_schema, str) or not idx_schema:
+                  if not isinstance(index.get("schema"), str) or not index.get("schema"):
                       errors.append("index_schema_missing")
                   idx_cases = index.get("cases")
                   if not isinstance(idx_cases, list):
@@ -187,6 +185,7 @@ jobs:
 
           diagnostics = {
               "schema": "AURA-C6-RI-RS-PRESERVATION-DIAGNOSTICS/0.1",
+              "tested_source_commit": os.environ.get("AURA_RI_RS_COMMIT"),
               "report_path": str(report_path),
               "index_path": str(index_path),
               "report_byte_count": len(report_raw),
@@ -200,7 +199,6 @@ jobs:
               "errors": errors,
           }
           diagnostics_path.write_text(json.dumps(diagnostics, indent=2, sort_keys=True) + "\\n", encoding="utf-8")
-
           evidence = {
               "schema": "AURA-C6-IMPLEMENTATION-EVIDENCE/0.3",
               "component": "RI-RS-AURA-GUARD-STRICT-BC021-CONSUMER",
@@ -225,7 +223,6 @@ jobs:
           }
           (evidence_dir / "implementation-evidence.json").write_text(
               json.dumps(evidence, indent=2, sort_keys=True) + "\\n", encoding="utf-8")
-
           print(f"PRESERVATION_STATUS={preservation_status}")
           print(f"PRESERVATION_ERRORS={json.dumps(errors, sort_keys=True)}")
           if errors:
