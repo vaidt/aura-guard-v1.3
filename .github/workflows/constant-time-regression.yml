@@ -357,6 +357,21 @@ jobs:
                   errors.append(f"{label}: expected all 8 unique target/driver pairs, found {len(found)} records and {len(combos)} unique pairs")
           if re.search(r"does not define __checkct_panic|UNEXPECTED binsec output|failed to run binsec|Program status is : (unknown|insecure)", log, re.I):
               errors.append("analysis log contains missing-sentinel, unparsed, failed, unknown, or insecure evidence")
+          coverage_warning_pattern = re.compile(
+              r"^\\s*warning:.*(?:coverage|incomplete|unknown|unresolved|panic|"
+              r"timed?\\s*out|timeout|cannot conclude|could not conclude|"
+              r"not\\s+(?:fully\\s+)?(?:analysed|analyzed)|skipped)",
+              re.I | re.M,
+          )
+          coverage_warning_fixtures = [
+              "warning: driver does not define __checkct_panic, so panic paths may not be analysed correctly",
+              "WARNING: analysis coverage incomplete; this path is unknown",
+          ]
+          if any(not coverage_warning_pattern.search(sample) for sample in coverage_warning_fixtures):
+              errors.append("incomplete-coverage warning detector failed its negative controls")
+          coverage_warning = coverage_warning_pattern.search(log)
+          if coverage_warning:
+              errors.append("analysis emitted a warning indicating incomplete coverage: " + coverage_warning.group(0).strip())
           statuses = re.findall(r"^\s*=>\s*(secure|unknown|insecure|error)\s*$", log, re.M | re.I)
           if not statuses:
               errors.append("no BINSEC entrypoint verdicts were recorded")
@@ -386,7 +401,7 @@ jobs:
           if errors:
               verdict = "FAIL\n" + "\n".join("- " + e for e in errors) + "\n"
           else:
-              verdict = "PASS\nAll 8 target/driver binaries contained __checkct_panic; both pre-analysis gates passed; all recorded BINSEC entrypoint statuses were secure; no unknown/insecure/unparsed result was observed.\n"
+              verdict = "PASS\nAll 8 target/driver binaries contained __checkct_panic; both pre-analysis gates passed; all recorded BINSEC entrypoint statuses were secure; no unknown/insecure/unparsed result or incomplete-coverage warning was observed.\n"
           (evidence / "strict-verdict.txt").write_text(verdict, encoding="utf-8")
           print(verdict, end="")
           if errors:
