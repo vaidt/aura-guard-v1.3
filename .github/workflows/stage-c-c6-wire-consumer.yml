@@ -6,6 +6,7 @@ on:
     paths:
       - "conformance/strict_wire.rs"
       - "conformance/strict_wire_c6.rs"
+      - "Cargo.toml"
       - "src/lib.rs"
       - ".github/workflows/stage-c-c6-wire-consumer.yml"
   pull_request:
@@ -13,6 +14,7 @@ on:
     paths:
       - "conformance/strict_wire.rs"
       - "conformance/strict_wire_c6.rs"
+      - "Cargo.toml"
       - "src/lib.rs"
       - ".github/workflows/stage-c-c6-wire-consumer.yml"
   workflow_dispatch:
@@ -24,48 +26,94 @@ jobs:
   strict-wire:
     runs-on: ubuntu-latest
     env:
-      AURA_SOURCE_COMMIT: ${{ github.sha }}
-      AURA_BASE_SOURCE_COMMIT: fd5f6e90940225e9f8ffe23707382669bdfaba82
+      CARGO_TERM_COLOR: always
+      RUST_BACKTRACE: 1
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out exact RI-RS pull-request head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
       - uses: dtolnay/rust-toolchain@1.86.0
-      - name: Run strict BC-02.1 consumer tests
-        id: strict-tests
-        run: cargo test --test strict_wire_c6 -- --nocapture
-      - name: Preserve pinned RI-RS consumer evidence
-        if: always()
+
+      - name: Check out pinned AURA specification corpus and materializer
+        uses: actions/checkout@v4
+        with:
+          repository: vaidt/aura-specification
+          ref: 6b4f3dcc46841bb17fafa3e1b1cc8ea9c0397330
+          path: aura-specification
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Enforce source identity and record immutable blob pins
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          echo "AURA_RI_RS_COMMIT=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+          echo "AURA_RI_RS_SOURCE_BLOB=$(git rev-parse HEAD:conformance/strict_wire.rs)" >> "$GITHUB_ENV"
+          echo "AURA_RI_RS_LIB_BLOB=$(git rev-parse HEAD:src/lib.rs)" >> "$GITHUB_ENV"
+          echo "AURA_RI_RS_CARGO_BLOB=$(git rev-parse HEAD:Cargo.toml)" >> "$GITHUB_ENV"
+          echo "AURA_RI_RS_TEST_BLOB=$(git rev-parse HEAD:conformance/strict_wire_c6.rs)" >> "$GITHUB_ENV"
+
+      - name: Materialize the shared byte-identical C6 corpus once
+        working-directory: aura-specification
+        run: |
+          python scripts/stage_c/materialize_c6_wire_corpus.py \
+            --manifest fixtures/corpus/STAGE-C-C6-STRICT-WIRE-MUTATION-CORPUS-v0.1-DRAFT.json \
+            --output-dir artifacts/stage-c/c6-wire-corpus
+
+      - name: Run RI-RS strict consumer unit tests
+        run: cargo test --locked --lib strict_wire::tests -- --nocapture
+
+      - name: Run exact shared C6 byte corpus against RI-RS
         env:
-          TEST_OUTCOME: ${{ steps.strict-tests.outcome }}
+          AURA_C6_WIRE_CORPUS_DIR: ${{ github.workspace }}/aura-specification/artifacts/stage-c/c6-wire-corpus
+          AURA_C6_WIRE_RESULTS_DIR: ${{ github.workspace }}/aura-specification/artifacts/stage-c/c6-wire-corpus/results
+        run: cargo test --locked --test strict_wire_c6 -- --include-ignored --nocapture
+
+      - name: Preserve bounded RI-RS wire-consumer evidence
+        if: always()
+        shell: bash
         run: |
           mkdir -p artifacts/c6-ri-rs-consumer
-          parser_blob=$(git rev-parse "${GITHUB_SHA}:conformance/strict_wire.rs")
-          test_blob=$(git rev-parse "${GITHUB_SHA}:conformance/strict_wire_c6.rs")
-          corpus_sha=$(sha256sum conformance/STAGE-C-C6-BC02.1-WIRE-MUTATIONS-v0.1.json | cut -d' ' -f1)
-          cat > artifacts/c6-ri-rs-consumer/implementation-evidence.json <<EOF
-          {
-            "schema": "AURA-C6-IMPLEMENTATION-EVIDENCE/0.1",
-            "component": "RI-RS-STRICT-CONSUMER-MIRROR",
-            "repository": "vaidt/aura-guard-v1.3",
-            "base_source_commit": "${AURA_BASE_SOURCE_COMMIT}",
-            "tested_head_sha": "${GITHUB_SHA}",
-            "consumer_parser_blob_sha": "${parser_blob}",
-            "test_blob_sha": "${test_blob}",
-            "shared_corpus_sha256": "${corpus_sha}",
-            "tests_outcome": "${TEST_OUTCOME}",
-            "receipt_producer_flow": "NOT_EXECUTED_IN_THIS_REPOSITORY",
-            "native_RI_RS_producer_flow_repository": "vaidt/aura-specification",
-            "c6_gate_status": "BLOCKED_NOT_EXECUTED",
-            "authority": "NONE",
-            "governance_effect": "NONE",
-            "release_effect": "NONE"
+          python - <<'PY'
+          import json, os, pathlib
+          p = pathlib.Path("aura-specification/artifacts/stage-c/c6-wire-corpus/results/ri-rs-results.json")
+          report = json.loads(p.read_text()) if p.exists() else None
+          evidence = {
+              "schema": "AURA-C6-IMPLEMENTATION-EVIDENCE/0.2",
+              "component": "RI-RS-AURA-GUARD-STRICT-BC021-CONSUMER",
+              "repository": "vaidt/aura-guard-v1.3",
+              "tested_source_commit": os.environ.get("AURA_RI_RS_COMMIT"),
+              "consumer_blob_sha256": os.environ.get("AURA_RI_RS_SOURCE_BLOB"),
+              "lib_blob_sha256": os.environ.get("AURA_RI_RS_LIB_BLOB"),
+              "cargo_blob_sha256": os.environ.get("AURA_RI_RS_CARGO_BLOB"),
+              "test_blob_sha256": os.environ.get("AURA_RI_RS_TEST_BLOB"),
+              "shared_index_sha256": report.get("index_sha256") if report else None,
+              "case_count": report.get("case_count") if report else 0,
+              "consumer_report_status": report.get("status") if report else "NOT_AVAILABLE",
+              "c6_gate_status": "BLOCKED_PENDING_EVIDENCE_REVIEW",
+              "authority": "NONE",
+              "governance_effect": "NONE",
+              "authorization_effect": "NONE",
+              "release_effect": "NONE"
           }
-          EOF
+          pathlib.Path("artifacts/c6-ri-rs-consumer/implementation-evidence.json").write_text(
+              json.dumps(evidence, indent=2, sort_keys=True) + "\\n", encoding="utf-8")
+          PY
           python -m json.tool artifacts/c6-ri-rs-consumer/implementation-evidence.json >/dev/null
+
       - name: Upload RI-RS consumer evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: c6-ri-rs-consumer-evidence
-          path: artifacts/c6-ri-rs-consumer/
-          if-no-files-found: error
+          path: |
+            artifacts/c6-ri-rs-consumer/
+            aura-specification/artifacts/stage-c/c6-wire-corpus/index.json
+            aura-specification/artifacts/stage-c/c6-wire-corpus/results/ri-rs-results.json
+          if-no-files-found: warn
           retention-days: 14
