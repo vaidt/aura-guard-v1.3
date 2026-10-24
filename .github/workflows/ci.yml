@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.86.0
+      - uses: dtolnay/rust-toolchain@1.87.0
         with:
           components: rustfmt
       - run: cargo fmt --all -- --check
@@ -26,7 +26,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.86.0
+      - uses: dtolnay/rust-toolchain@1.87.0
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
@@ -45,7 +45,7 @@ jobs:
           repository: vaidt/aura-specification
           ref: b3a6e784d9a6ea2e0b554310e3de80e7d13de859
           path: aura-specification
-      - uses: dtolnay/rust-toolchain@1.86.0
+      - uses: dtolnay/rust-toolchain@1.87.0
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --locked --release --all-targets
       - name: Execute CANONICAL-003 and preserve byte/hash evidence
@@ -67,7 +67,7 @@ jobs:
           repository: vaidt/aura-poc-a-core-v3.3
           ref: cdf9bbf2b8420732f85a77197ea753809edbb029
           path: aura-poc-a-core-v3.3
-      - uses: dtolnay/rust-toolchain@1.86.0
+      - uses: dtolnay/rust-toolchain@1.87.0
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -81,8 +81,7 @@ jobs:
         run: cargo test --locked --test core_measurement_tamper -- --nocapture
 
   # cargo-{audit,deny,cyclonedx} track current stable rustc; using @stable
-  # here is intentional. The MSRV guarantee for the *crate itself* is
-  # enforced by the fmt/clippy/test jobs which pin to 1.86.0.
+  # here is intentional. The crate MSRV is declared in Cargo.toml and checked by the fmt/clippy/test jobs pinned to 1.87.0.
   audit:
     name: cargo-audit
     runs-on: ubuntu-latest
@@ -132,7 +131,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.86.0
+      - uses: dtolnay/rust-toolchain@1.87.0
       - uses: Swatinem/rust-cache@v2
       - name: Record toolchain provenance
         run: |
@@ -165,7 +164,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.86.0
+      - uses: dtolnay/rust-toolchain@1.87.0
       - uses: Swatinem/rust-cache@v2
       - name: Build binaries and sign local policies
         run: ./scripts/setup.sh
@@ -226,7 +225,7 @@ jobs:
           repository: vaidt/aura-poc-a-core-v3.3
           ref: cdf9bbf2b8420732f85a77197ea753809edbb029
           path: aura-poc-a-core-v3.3
-      - uses: dtolnay/rust-toolchain@1.86.0
+      - uses: dtolnay/rust-toolchain@1.87.0
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
