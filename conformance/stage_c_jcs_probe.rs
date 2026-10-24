@@ -5,6 +5,9 @@
 //! serializer/Merkle path. It does not implement BC-02 receiver semantics and
 //! cannot assign protocol-conformance or release status.
 
+// This non-production conformance harness uses panic-on-fixture-failure assertions by design.
+#![allow(clippy::expect_used, clippy::unwrap_used)]
+
 use clap::Parser;
 use serde::Deserialize;
 use serde_json::Value;

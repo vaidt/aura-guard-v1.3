@@ -590,6 +590,9 @@ fn take_object(
     Ok(std::mem::take(&mut map))
 }
 
+// Every call site follows `take_object`, which validates the exact required-field set.
+// Keep the invariant-based extraction explicit and narrowly scoped for Clippy.
+#[allow(clippy::expect_used)]
 fn take(map: &mut BTreeMap<String, StrictJsonValue>, key: &str) -> StrictJsonValue {
     map.remove(key)
         .expect("exact BC-02.1 field set checked before extraction")
@@ -708,6 +711,8 @@ impl<'de> Deserialize<'de> for StrictJsonValue {
 }
 
 #[cfg(test)]
+// These conformance tests intentionally panic on invalid test setup/results.
+#[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use super::*;
 
