@@ -4,6 +4,9 @@
 //! preflight supplies the exact shared corpus, expected source pins and result
 //! directory, and enables it with --include-ignored.
 
+// This non-production conformance harness uses panic-on-fixture-failure assertions by design.
+#![allow(clippy::expect_used, clippy::unwrap_used)]
+
 use aura_guard::strict_wire::parse_receipt_json;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
