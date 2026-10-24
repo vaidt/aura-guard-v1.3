@@ -10,7 +10,7 @@ on:
       - "src/lib.rs"
       - ".github/workflows/stage-c-c6-wire-consumer.yml"
   pull_request:
-    branches: ["experiment/stage-c-merkle-c5-20261023"]
+    branches: ["experiment/stage-c-merkle-c5-20261023", "experiment/stage-c-c6-wire-consumer-20261024"]
     paths:
       - "conformance/strict_wire.rs"
       - "conformance/strict_wire_c6.rs"
@@ -18,6 +18,11 @@ on:
       - "src/lib.rs"
       - ".github/workflows/stage-c-c6-wire-consumer.yml"
   workflow_dispatch:
+    inputs:
+      target_ref:
+        description: "Exact RI-RS source SHA or ref to test"
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -29,10 +34,10 @@ jobs:
       CARGO_TERM_COLOR: always
       RUST_BACKTRACE: 1
     steps:
-      - name: Check out exact RI-RS pull-request head
+      - name: Check out exact RI-RS source
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.target_ref || github.event.pull_request.head.sha || github.sha }}
 
       - uses: dtolnay/rust-toolchain@1.86.0
 
@@ -43,6 +48,13 @@ jobs:
           ref: 6b4f3dcc46841bb17fafa3e1b1cc8ea9c0397330
           path: aura-specification
 
+      - name: Check out workflow-owned preservation validator
+        uses: actions/checkout@v4
+        with:
+          repository: vaidt/aura-guard-v1.3
+          ref: ${{ github.sha }}
+          path: guard-tooling
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -51,8 +63,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
-          echo "AURA_RI_RS_COMMIT=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+          expected_ref="${{ github.event_name == 'workflow_dispatch' && inputs.target_ref || github.event.pull_request.head.sha || github.sha }}"
+          actual_sha="$(git rev-parse HEAD)"
+          test "$actual_sha" = "$(git rev-parse "$expected_ref^{commit}")"
+          echo "AURA_RI_RS_COMMIT=$actual_sha" >> "$GITHUB_ENV"
           echo "AURA_RI_RS_SOURCE_BLOB=$(git rev-parse HEAD:conformance/strict_wire.rs)" >> "$GITHUB_ENV"
           echo "AURA_RI_RS_LIB_BLOB=$(git rev-parse HEAD:src/lib.rs)" >> "$GITHUB_ENV"
           echo "AURA_RI_RS_CARGO_BLOB=$(git rev-parse HEAD:Cargo.toml)" >> "$GITHUB_ENV"
@@ -78,33 +92,11 @@ jobs:
         if: always()
         shell: bash
         run: |
+          set -euo pipefail
           mkdir -p artifacts/c6-ri-rs-consumer
-          python - <<'PY'
-          import json, os, pathlib
-          p = pathlib.Path("aura-specification/artifacts/stage-c/c6-wire-corpus/results/ri-rs-results.json")
-          report = json.loads(p.read_text()) if p.exists() else None
-          evidence = {
-              "schema": "AURA-C6-IMPLEMENTATION-EVIDENCE/0.2",
-              "component": "RI-RS-AURA-GUARD-STRICT-BC021-CONSUMER",
-              "repository": "vaidt/aura-guard-v1.3",
-              "tested_source_commit": os.environ.get("AURA_RI_RS_COMMIT"),
-              "consumer_blob_sha256": os.environ.get("AURA_RI_RS_SOURCE_BLOB"),
-              "lib_blob_sha256": os.environ.get("AURA_RI_RS_LIB_BLOB"),
-              "cargo_blob_sha256": os.environ.get("AURA_RI_RS_CARGO_BLOB"),
-              "test_blob_sha256": os.environ.get("AURA_RI_RS_TEST_BLOB"),
-              "shared_index_sha256": report.get("index_sha256") if report else None,
-              "case_count": report.get("case_count") if report else 0,
-              "consumer_report_status": report.get("status") if report else "NOT_AVAILABLE",
-              "c6_gate_status": "BLOCKED_PENDING_EVIDENCE_REVIEW",
-              "authority": "NONE",
-              "governance_effect": "NONE",
-              "authorization_effect": "NONE",
-              "release_effect": "NONE"
-          }
-          pathlib.Path("artifacts/c6-ri-rs-consumer/implementation-evidence.json").write_text(
-              json.dumps(evidence, indent=2, sort_keys=True) + "\\n", encoding="utf-8")
-          PY
+          python guard-tooling/scripts/stage_c/validate_ri_rs_preservation.py
           python -m json.tool artifacts/c6-ri-rs-consumer/implementation-evidence.json >/dev/null
+          python -m json.tool artifacts/c6-ri-rs-consumer/preservation-diagnostics.json >/dev/null
 
       - name: Upload RI-RS consumer evidence
         if: always()
