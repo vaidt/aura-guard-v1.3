@@ -1,0 +1,37 @@
+name: ECC migration lockfile probe
+
+on:
+  push:
+    branches:
+      - "security/ecc-stack-migration-rustsec-2026-0387"
+    paths:
+      - "Cargo.toml"
+
+permissions:
+  contents: read
+
+jobs:
+  resolve-lockfile:
+    name: Resolve isolated ECC lockfile candidate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Resolve only the intended ECC stack and patched bigint
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo update -p p256 --precise 0.14.0
+          cargo update -p p384 --precise 0.14.0
+          cargo update -p ecdsa --precise 0.17.0
+          cargo update -p crypto-bigint --precise 0.7.6
+          cargo tree -i crypto-bigint@0.7.6
+          cargo tree -d
+          sha256sum Cargo.lock
+      - name: Upload generated lockfile for explicit human review
+        uses: actions/upload-artifact@v4
+        with:
+          name: ecc-migration-cargo-lock-candidate
+          path: Cargo.lock
+          if-no-files-found: error
+          retention-days: 3
