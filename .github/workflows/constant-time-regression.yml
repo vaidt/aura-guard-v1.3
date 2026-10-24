@@ -10,6 +10,7 @@ on:
   push:
     branches:
       - "security/ecc-stack-migration-rustsec-2026-0387"
+      - "ops/binsec-fix-test"
     paths:
       - "Cargo.toml"
       - "Cargo.lock"
@@ -32,6 +33,12 @@ jobs:
           repository: RustCrypto/crypto-bigint
           ref: f17d82ad761de4140c6c22f835ddaead1a434f57
           path: crypto-bigint-source
+      - name: Checkout pinned cargo-checkct source for fail-closed preflight
+        uses: actions/checkout@v4
+        with:
+          repository: Ledger-Donjon/cargo-checkct
+          ref: 85271e5ce9eab9ba895c62c8b5d4129810a635a0
+          path: cargo-checkct-source
       - name: Verify source version matches the resolved lockfile package
         shell: bash
         run: |
@@ -46,7 +53,31 @@ jobs:
           assert versions == ["0.7.7"], f"unexpected crypto-bigint lock versions: {versions}"
           print("Resolved crypto-bigint version:", versions[0])
           PY
-      - name: Run upstream BINSEC control-flow and memory-access analysis
+      - name: Apply controlled checkct panic-handler overlay
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p binsec-evidence
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+          p = Path("crypto-bigint-source/checkct/Cargo.toml")
+          raw = p.read_bytes()
+          needle = b'panic = "immediate-abort"'
+          if raw.count(needle) != 1:
+              raise SystemExit("unexpected checkct profile; refusing an unreviewed overlay")
+          updated = raw.replace(needle, b'panic = "abort"')
+          p.write_bytes(updated)
+          evidence = Path("binsec-evidence")
+          (evidence / "panic-overlay-sha256.txt").write_text(
+              "original_sha256=" + hashlib.sha256(raw).hexdigest() + "\n" +
+              "overlay_sha256=" + hashlib.sha256(updated).hexdigest() + "\n" +
+              "overlay_scope=crypto-bigint-source/checkct/Cargo.toml only\n",
+              encoding="utf-8",
+          )
+          print((evidence / "panic-overlay-sha256.txt").read_text(encoding="utf-8"), end="")
+          PY
+      - name: Install pinned BINSEC runtime and cargo-checkct (setup only)
         uses: Ledger-Donjon/cargo-checkct@85271e5ce9eab9ba895c62c8b5d4129810a635a0
         with:
           directory: crypto-bigint-source
@@ -54,3 +85,302 @@ jobs:
           checks: control-flow,memory-access
           skip-unknown: false
           all-leaks: true
+          setup-only: true
+      - name: Install the exact checkct workspace Rust toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd crypto-bigint-source/checkct
+          rustup toolchain install
+      - name: Harden pinned cargo-checkct to fail closed before analysis
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+          p = Path("cargo-checkct-source/src/run.rs")
+          text = p.read_text(encoding="utf-8")
+          original = text
+          start_marker = "    let halt_at_panic = if has_panic_function {"
+          start = text.index(start_marker)
+          end_marker = chr(10) + "    };"
+          end = text.index(end_marker, start) + len(end_marker)
+          replacement = """    if !has_panic_function {
+              bail!(
+                  "required checkct panic sentinel __checkct_panic missing for target={} driver={} binary={:?}; refusing BINSEC analysis",
+                  binary.target, binary.driver, binary.path
+              );
+          }
+          println!(
+              "PANIC_SENTINEL_JOB_PREPARE_PASS target={} driver={} symbol=__checkct_panic",
+              binary.target, binary.driver
+          );
+          let halt_at_panic = format!("halt at <__checkct_panic>{}", abi.thumb);"""
+          text = text[:start] + replacement + text[end:]
+          needle = "    let mut reports = Vec::new();"
+          preflight = """    // Validate the complete target/driver matrix before creating or launching any BINSEC jobs.
+          const EXPECTED_TARGETS: [&str; 4] = [
+              "riscv32imac-unknown-none-elf",
+              "thumbv6m-none-eabi",
+              "thumbv7em-none-eabihf",
+              "x86_64-unknown-linux-gnu",
+          ];
+          const EXPECTED_DRIVERS: [&str; 2] = ["driver", "driver-opt0"];
+          if binaries.len() != EXPECTED_TARGETS.len() * EXPECTED_DRIVERS.len() {
+              bail!(
+                  "expected exactly 8 BINSEC binaries (4 targets x 2 drivers), found {}",
+                  binaries.len()
+              );
+          }
+          for target in EXPECTED_TARGETS {
+              for driver in EXPECTED_DRIVERS {
+                  if !binaries.iter().any(|b| b.target.as_str() == target && b.driver.as_str() == driver) {
+                      bail!("missing required BINSEC binary target={} driver={}", target, driver);
+                  }
+              }
+          }
+          for binary in &binaries {
+              let data = fs::read(&binary.path)
+                  .with_context(|| format!("Failed to read {:?} during sentinel preflight", binary.path))?;
+              let elf = Elf::parse(&data)
+                  .with_context(|| format!("Failed to parse {:?} during sentinel preflight", binary.path))?;
+              let has_panic_function = elf
+                  .syms
+                  .iter()
+                  .any(|sym| elf.strtab.get_at(sym.st_name) == Some("__checkct_panic"));
+              if !has_panic_function {
+                  bail!(
+                      "pre-analysis sentinel gate failed: target={} driver={} binary={:?} does not define __checkct_panic",
+                      binary.target, binary.driver, binary.path
+                  );
+              }
+              println!(
+                  "PANIC_SENTINEL_PREANALYSIS_PASS target={} driver={} symbol=__checkct_panic",
+                  binary.target, binary.driver
+              );
+          }
+
+          let mut reports = Vec::new();"""
+          if text.count(needle) != 1:
+              raise SystemExit("expected exactly one run_binsec report initialization; refusing patch")
+          text = text.replace(needle, preflight, 1)
+          if text == original:
+              raise SystemExit("cargo-checkct hardening made no changes")
+          p.write_text(text, encoding="utf-8")
+          evidence = Path("binsec-evidence")
+          evidence.mkdir(exist_ok=True)
+          (evidence / "cargo-checkct-source-hardening.txt").write_text(
+              "pinned_upstream_commit=85271e5ce9eab9ba895c62c8b5d4129810a635a0\n" +
+              "original_run_rs_sha256=" + hashlib.sha256(original.encode()).hexdigest() + "\n" +
+              "patched_run_rs_sha256=" + hashlib.sha256(text.encode()).hexdigest() + "\n" +
+              "change=global 8-binary sentinel preflight before any BINSEC jobs; missing sentinel is fatal\n",
+              encoding="utf-8",
+          )
+          print((evidence / "cargo-checkct-source-hardening.txt").read_text(encoding="utf-8"), end="")
+          PY
+      - name: Install the hardened cargo-checkct binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo install --locked --path cargo-checkct-source --root "$RUNNER_TEMP/cargo-checkct-hardened" --force > binsec-evidence/cargo-checkct-install.log 2>&1
+          cat binsec-evidence/cargo-checkct-install.log
+          test -x "$RUNNER_TEMP/cargo-checkct-hardened/bin/cargo-checkct"
+      - name: Record source identities and tool versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo "aura_repository=vaidt/aura-guard-v1.3"
+            git -C "$GITHUB_WORKSPACE" rev-parse HEAD
+            echo "event=$GITHUB_EVENT_NAME"
+            echo "run_id=$GITHUB_RUN_ID"
+            echo "run_attempt=$GITHUB_RUN_ATTEMPT"
+            python3 - <<'PY'
+            import json, os, subprocess
+            from pathlib import Path
+            event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text(encoding="utf-8"))
+            expected = "f94e269e5a2098ef374dcfb7dc8ceef09d08c4ed"
+            if os.environ.get("GITHUB_EVENT_NAME") != "push":
+                raise SystemExit("FAIL-CLOSED: this test is only valid for the isolated push trigger")
+            if event.get("ref") != "refs/heads/ops/binsec-fix-test":
+                raise SystemExit("FAIL-CLOSED: unexpected ref: " + str(event.get("ref")))
+            head = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+            merge_base = subprocess.check_output(["git", "merge-base", "HEAD", expected], text=True).strip()
+            if merge_base != expected:
+                raise SystemExit("FAIL-CLOSED: commit history is not based on the approved exact SHA")
+            print("requested_base_sha=" + expected)
+            print("tested_head_sha=" + head)
+            print("git_merge_base=" + merge_base)
+            print("push_before_sha=" + str(event.get("before", "")))
+            print("push_after_sha=" + str(event.get("after", "")))
+            if event.get("after") != head:
+                raise SystemExit("FAIL-CLOSED: event after SHA differs from checked-out HEAD")
+            PY
+            echo "crypto_bigint_commit=$(git -C crypto-bigint-source rev-parse HEAD)"
+            echo "cargo_checkct_commit=$(git -C cargo-checkct-source rev-parse HEAD)"
+            echo "expected_crypto_bigint_commit=f17d82ad761de4140c6c22f835ddaead1a434f57"
+            echo "expected_cargo_checkct_commit=85271e5ce9eab9ba895c62c8b5d4129810a635a0"
+            git -C crypto-bigint-source rev-parse HEAD | grep -Fx "f17d82ad761de4140c6c22f835ddaead1a434f57"
+            git -C cargo-checkct-source rev-parse HEAD | grep -Fx "85271e5ce9eab9ba895c62c8b5d4129810a635a0"
+            (cd crypto-bigint-source/checkct && rustc --version --verbose)
+            (cd crypto-bigint-source/checkct && cargo --version)
+            rustup show active-toolchain
+            binsec -version
+            opam --version
+            ocamlc -version
+            nm --version | head -n 2
+            python3 --version
+            "$RUNNER_TEMP/cargo-checkct-hardened/bin/cargo-checkct" --help | head -n 30
+          } > binsec-evidence/tool-versions-and-source-sha.txt 2>&1
+          cat binsec-evidence/tool-versions-and-source-sha.txt
+      - name: Build drivers and verify __checkct_panic with nm before BINSEC
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p binsec-evidence/nm
+          if (cd crypto-bigint-source/checkct && cargo build --release --workspace) > binsec-evidence/preflight-build.log 2>&1; then
+            cat binsec-evidence/preflight-build.log
+          else
+            cat binsec-evidence/preflight-build.log
+            exit 1
+          fi
+          targets=(
+            riscv32imac-unknown-none-elf
+            thumbv6m-none-eabi
+            thumbv7em-none-eabihf
+            x86_64-unknown-linux-gnu
+          )
+          for target in "${targets[@]}"; do
+            for driver in driver driver-opt0; do
+              binary="crypto-bigint-source/checkct/target/$target/release/$driver"
+              test -f "$binary" || { echo "FAIL: missing binary $binary" >&2; exit 1; }
+              nm_log="binsec-evidence/nm/nm-$target-$driver.txt"
+              nm --defined-only "$binary" > "$nm_log"
+              if ! awk '{print $NF}' "$nm_log" | grep -Fxq '__checkct_panic'; then
+                echo "FAIL: $target/$driver does not define __checkct_panic" >&2
+                exit 1
+              fi
+              binary_sha=$(sha256sum "$binary" | awk '{print $1}')
+              symbol_line=$(awk '$NF == "__checkct_panic" {print; exit}' "$nm_log")
+              printf 'NM_SENTINEL_PASS target=%s driver=%s binary_sha256=%s symbol=%s\n' "$target" "$driver" "$binary_sha" "$symbol_line" | tee -a binsec-evidence/nm-summary.txt
+            done
+          done
+          count=$(grep -c '^NM_SENTINEL_PASS ' binsec-evidence/nm-summary.txt)
+          test "$count" -eq 8
+      - name: Run hardened BINSEC control-flow and memory-access analysis
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +e
+          "$RUNNER_TEMP/cargo-checkct-hardened/bin/cargo-checkct" run --dir crypto-bigint-source --timeout 120 --checks control-flow,memory-access --all-leaks > binsec-evidence/cargo-checkct-binsec.log 2>&1
+          status=$?
+          set -e
+          printf '%s\n' "$status" > binsec-evidence/cargo-checkct-exit-code.txt
+          cat binsec-evidence/cargo-checkct-binsec.log
+          exit "$status"
+      - name: Enforce strict interpretation and produce per-target verdict
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          evidence = Path("binsec-evidence")
+          evidence.mkdir(exist_ok=True)
+          errors = []
+          log_path = evidence / "cargo-checkct-binsec.log"
+          status_path = evidence / "cargo-checkct-exit-code.txt"
+          log = log_path.read_text(encoding="utf-8", errors="replace") if log_path.exists() else ""
+          if not status_path.exists():
+              errors.append("analysis exit-code record is missing")
+          else:
+              try:
+                  code = int(status_path.read_text().strip())
+                  if code != 0:
+                      errors.append(f"cargo-checkct exited with {code}")
+              except ValueError:
+                  errors.append("analysis exit code is malformed")
+          targets = [
+              "riscv32imac-unknown-none-elf",
+              "thumbv6m-none-eabi",
+              "thumbv7em-none-eabihf",
+              "x86_64-unknown-linux-gnu",
+          ]
+          drivers = ["driver", "driver-opt0"]
+          expected = {(t, d) for t in targets for d in drivers}
+          for label, pattern in [
+              ("pre-analysis ELF sentinel gate", r"^PANIC_SENTINEL_PREANALYSIS_PASS target=(\S+) driver=(\S+) symbol=__checkct_panic$"),
+              ("per-driver preparation sentinel gate", r"^PANIC_SENTINEL_JOB_PREPARE_PASS target=(\S+) driver=(\S+) symbol=__checkct_panic$"),
+          ]:
+              found = re.findall(pattern, log, re.M)
+              combos = {(t, d) for t, d in found}
+              if len(found) != 8 or combos != expected:
+                  errors.append(f"{label}: expected all 8 unique target/driver pairs, found {len(found)} records and {len(combos)} unique pairs")
+          if re.search(r"does not define __checkct_panic|UNEXPECTED binsec output|failed to run binsec|Program status is : (unknown|insecure)", log, re.I):
+              errors.append("analysis log contains missing-sentinel, unparsed, failed, unknown, or insecure evidence")
+          statuses = re.findall(r"^\s*=>\s*(secure|unknown|insecure|error)\s*$", log, re.M | re.I)
+          if not statuses:
+              errors.append("no BINSEC entrypoint verdicts were recorded")
+          elif any(s.lower() != "secure" for s in statuses):
+              errors.append("one or more BINSEC entrypoint verdicts are not secure")
+          per_pair = {}
+          current = None
+          for line in log.splitlines():
+              m = re.match(r"^Driver (driver(?:-opt0)?), target ([^,]+), entrypoint (.*):$", line)
+              if m:
+                  current = (m.group(2), m.group(1))
+                  per_pair.setdefault(current, [])
+                  continue
+              m = re.match(r"^\s*=>\s*(secure|unknown|insecure|error)\s*$", line, re.I)
+              if m and current:
+                  per_pair[current].append(m.group(1).lower())
+                  current = None
+          rows = []
+          for target in targets:
+              for driver in drivers:
+                  values = per_pair.get((target, driver), [])
+                  ok = bool(values) and all(v == "secure" for v in values)
+                  rows.append(f"{target}\t{driver}\t{'PASS' if ok else 'FAIL'}\tentrypoints={len(values)}\tstatuses={','.join(values)}")
+                  if not ok:
+                      errors.append(f"target/driver {target}/{driver} has missing or non-secure entrypoint results")
+          (evidence / "per-target-status.tsv").write_text("target\tdriver\tverdict\tentrypoints\tstatuses\n" + "\n".join(rows) + "\n", encoding="utf-8")
+          if errors:
+              verdict = "FAIL\n" + "\n".join("- " + e for e in errors) + "\n"
+          else:
+              verdict = "PASS\nAll 8 target/driver binaries contained __checkct_panic; both pre-analysis gates passed; all recorded BINSEC entrypoint statuses were secure; no unknown/insecure/unparsed result was observed.\n"
+          (evidence / "strict-verdict.txt").write_text(verdict, encoding="utf-8")
+          print(verdict, end="")
+          if errors:
+              raise SystemExit(1)
+          PY
+      - name: Package and hash evidence even on failure
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          mkdir -p binsec-evidence
+          {
+            echo "repository=vaidt/aura-guard-v1.3"
+            echo "branch=ops/binsec-fix-test"
+            echo "requested_base_sha=f94e269e5a2098ef374dcfb7dc8ceef09d08c4ed"
+            echo "workflow_run_id=$GITHUB_RUN_ID"
+            echo "workflow_run_attempt=$GITHUB_RUN_ATTEMPT"
+            date -u '+collected_utc=%Y-%m-%dT%H:%M:%SZ'
+          } >> binsec-evidence/collection-metadata.txt
+          find binsec-evidence -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 -r sha256sum > binsec-evidence/SHA256SUMS.txt
+          tar -czf aura-binsec-evidence.tar.gz binsec-evidence
+          sha256sum aura-binsec-evidence.tar.gz > aura-binsec-evidence.tar.gz.sha256
+          exit 0
+      - name: Upload strict BINSEC evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aura-binsec-strict-evidence
+          path: |
+            binsec-evidence/
+            aura-binsec-evidence.tar.gz
+            aura-binsec-evidence.tar.gz.sha256
+          if-no-files-found: warn
+          retention-days: 90
