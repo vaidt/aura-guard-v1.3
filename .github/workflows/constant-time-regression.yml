@@ -252,15 +252,15 @@ jobs:
           print("expected_cargo_checkct_commit=" + expected_checkct)
 
           for name, args, cwd, optional in [
-              ("rustc_version_verbose", ["rustc", "--version", "--verbose"], "crypto-bigint-source/checkct"),
-              ("cargo_version", ["cargo", "--version"], "crypto-bigint-source/checkct"),
+              ("rustc_version_verbose", ["rustc", "--version", "--verbose"], "crypto-bigint-source/checkct", False),
+              ("cargo_version", ["cargo", "--version"], "crypto-bigint-source/checkct", False),
               ("rustup_active_toolchain", ["rustup", "show", "active-toolchain"], "crypto-bigint-source/checkct", False),
               ("binsec_version", ["binsec", "-version"], None, False),
               ("opam_version", ["opam", "--version"], None, True),
               ("ocamlc_version", ["ocamlc", "-version"], None, True),
               ("nm_version", ["nm", "--version"], None, False),
-              ("python_version", ["python3", "--version"], None),
-              ("cargo_checkct_help", [os.environ["RUNNER_TEMP"] + "/cargo-checkct-hardened/bin/cargo-checkct", "--help"], None),
+              ("python_version", ["python3", "--version"], None, False),
+              ("cargo_checkct_help", [os.environ["RUNNER_TEMP"] + "/cargo-checkct-hardened/bin/cargo-checkct", "--help"], None, False),
           ]:
               output = run(args, cwd=cwd, optional=optional)
               if name == "nm_version":
