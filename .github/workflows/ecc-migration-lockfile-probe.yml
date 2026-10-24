@@ -13,16 +13,15 @@ permissions:
 
 jobs:
   resolve-lockfile:
-    name: Resolve isolated ECC lockfile candidate
+    name: Resolve patched ECC graph at declared MSRV
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.87.0
       - name: Resolve compatible patched ECC dependency graph
         shell: bash
         env:
-          # Cargo 1.84+ prefers dependency releases compatible with this
-          # crate's declared rust-version = "1.86".
+          # Prefer releases that support the declared Rust 1.87 MSRV.
           CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS: fallback
         run: |
           set -euo pipefail
@@ -30,12 +29,29 @@ jobs:
           cargo update -p p384 --precise 0.14.0
           cargo update -p ecdsa --precise 0.17.0
 
-          # Fail closed: patched, MSRV-compatible release must be in the graph.
-          cargo tree -i crypto-bigint@0.7.6
-          if cargo tree -i crypto-bigint@0.5.5; then
-            echo "FAIL: vulnerable crypto-bigint 0.5.5 remains in the resolved graph"
-            exit 1
-          fi
+          # Fail closed against every resolved version of crypto-bigint below 0.7.6.
+          python3 - <<'PY'
+          import tomllib
+          from pathlib import Path
+
+          lock = tomllib.loads(Path("Cargo.lock").read_text(encoding="utf-8"))
+          packages = [p for p in lock["package"] if p["name"] == "crypto-bigint"]
+          def parse_version(value):
+              return tuple(int(part) for part in value.split(".")[:3])
+
+          print("Resolved crypto-bigint versions:", [p["version"] for p in packages])
+          if not packages or any(parse_version(p["version"]) < (0, 7, 6) for p in packages):
+              raise SystemExit("FAIL: a crypto-bigint version below 0.7.6 remains in Cargo.lock")
+
+          sha2_11 = [p["version"] for p in lock["package"]
+                     if p["name"] == "sha2" and p["version"].startswith("0.11.")]
+          print("Resolved sha2 0.11 versions:", sha2_11)
+          if any(parse_version(v) > (0, 11, 0) for v in sha2_11):
+              raise SystemExit("FAIL: sha2 0.11 dependency exceeds the declared Rust 1.87 MSRV")
+
+          assert all(parse_version(p["version"]) >= (0, 7, 6) for p in packages)
+          PY
+          cargo tree -i crypto-bigint
           rustc --version
           cargo --version
           cargo tree -d
