@@ -1007,7 +1007,6 @@ fn systime_rfc3339(t: SystemTime) -> chrono::DateTime<chrono::Utc> {
     chrono::DateTime::<chrono::Utc>::from_timestamp(secs, 0).unwrap_or_default()
 }
 
-
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod ecdsa_wycheproof_regression_tests {
