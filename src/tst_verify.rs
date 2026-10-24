@@ -1140,6 +1140,112 @@ mod ecdsa_wycheproof_regression_tests {
         );
     }
 
+    fn run_scalar_boundary_vectors(
+        source: &str,
+        expected_sha: &str,
+        curve_oid: &ObjectIdentifier,
+        required_cases: &[(&str, &str)],
+    ) {
+        let data: WycheproofFile =
+            serde_json::from_str(source).expect("pinned Wycheproof JSON parses");
+        let mut found = vec![0usize; required_cases.len()];
+
+        for group in data.test_groups {
+            assert_eq!(group.sha, expected_sha);
+            let public_key_der =
+                hex::decode(&group.public_key_der).expect("publicKeyDer is valid hex");
+            let spki = spki::SubjectPublicKeyInfoOwned::from_der(&public_key_der)
+                .expect("Wycheproof publicKeyDer is valid SPKI DER");
+
+            for vector in group.tests {
+                for (index, (required_comment, expected_result)) in
+                    required_cases.iter().enumerate()
+                {
+                    if vector.comment != *required_comment {
+                        continue;
+                    }
+
+                    found[index] += 1;
+                    assert_eq!(
+                        vector.result, *expected_result,
+                        "upstream expectation drift for boundary vector {:?} (tcId={})",
+                        vector.comment, vector.tc_id
+                    );
+
+                    let message = hex::decode(&vector.msg).expect("msg is valid hex");
+                    let signature = hex::decode(&vector.sig).expect("sig is valid hex");
+                    let actual = verify_ecdsa(curve_oid, &message, &signature, &spki);
+
+                    match *expected_result {
+                        "valid" => assert!(
+                            actual.is_ok(),
+                            "boundary vector {:?} (tcId={}) should verify but was rejected: {:?}",
+                            vector.comment,
+                            vector.tc_id,
+                            actual.err(),
+                        ),
+                        "invalid" => assert!(
+                            actual.is_err(),
+                            "boundary vector {:?} (tcId={}) should be rejected but was accepted",
+                            vector.comment,
+                            vector.tc_id,
+                        ),
+                        other => panic!("unsupported upstream result class {other:?}"),
+                    }
+                }
+            }
+        }
+
+        for (index, (comment, _)) in required_cases.iter().enumerate() {
+            assert!(
+                found[index] > 0,
+                "required scalar-boundary vector was not found in the pinned corpus: {comment:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn p256_r_and_s_scalar_boundaries_are_explicitly_regressed() {
+        run_scalar_boundary_vectors(
+            include_str!(
+                "../tests/fixtures/crypto-regression/wycheproof/ecdsa_secp256r1_sha256_test.json"
+            ),
+            "SHA-256",
+            &OID_ECDSA_SHA256,
+            &[
+                ("replacing r with zero", "invalid"),
+                ("replacing s with zero", "invalid"),
+                ("r is larger than n", "invalid"),
+                ("s is larger than n", "invalid"),
+                ("s == 1", "valid"),
+                ("s == 0", "invalid"),
+                ("r = n - 3, x = n - 2 is invalid", "invalid"),
+                ("s = n - 2^128", "valid"),
+            ],
+        );
+    }
+
+    #[test]
+    fn p384_r_and_s_scalar_boundaries_are_explicitly_regressed() {
+        run_scalar_boundary_vectors(
+            include_str!(
+                "../tests/fixtures/crypto-regression/wycheproof/ecdsa_secp384r1_sha384_test.json"
+            ),
+            "SHA-384",
+            &OID_ECDSA_SHA384,
+            &[
+                ("replacing r with zero", "invalid"),
+                ("replacing s with zero", "invalid"),
+                ("r is larger than n", "invalid"),
+                ("s is larger than n", "invalid"),
+                ("s == 1", "valid"),
+                ("s == 0", "invalid"),
+                ("r = n - 2, x = n - 1 is invalid", "invalid"),
+                ("s = n - 2^128", "valid"),
+            ],
+        );
+    }
+
     #[test]
     fn high_s_and_low_s_equivalent_signatures_record_baseline_policy() {
         let manifest: HighLowManifest = serde_json::from_str(include_str!(
