@@ -10,7 +10,7 @@ on:
       - "src/lib.rs"
       - ".github/workflows/stage-c-c6-wire-consumer.yml"
   pull_request:
-    branches: ["experiment/stage-c-merkle-c5-20261023"]
+    branches: ["experiment/stage-c-merkle-c5-20261023", "experiment/stage-c-c6-wire-consumer-20261024"]
     paths:
       - "conformance/strict_wire.rs"
       - "conformance/strict_wire_c6.rs"
