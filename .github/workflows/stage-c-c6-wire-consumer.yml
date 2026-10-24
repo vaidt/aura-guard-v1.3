@@ -99,6 +99,7 @@ jobs:
           index_path = root / "index.json"
           evidence_dir = pathlib.Path("artifacts/c6-ri-rs-consumer")
           diagnostics_path = evidence_dir / "preservation-diagnostics.json"
+          expected_commit = os.environ.get("AURA_RI_RS_COMMIT")
           preservation_status = "FAIL"
           errors = []
           report = None
@@ -141,42 +142,52 @@ jobs:
               if isinstance(report, dict) and isinstance(index, dict):
                   if report.get("schema") != "AURA-BC021-WIRE-CONSUMER-RESULTS/0.1":
                       errors.append("unexpected_report_schema")
+                  if index.get("schema") != "AURA-BC021-MATERIALIZED-WIRE-CORPUS/0.1":
+                      errors.append("unexpected_index_schema")
                   if report.get("index_sha256") != index_sha:
                       errors.append("report_index_sha256_mismatch")
+
                   cases = report.get("cases")
                   if not isinstance(cases, list):
                       errors.append("report_cases_not_list")
                       cases = []
-                  expected_count = report.get("case_count")
-                  if not isinstance(expected_count, int) or isinstance(expected_count, bool):
-                      errors.append("case_count_not_integer")
-                  elif expected_count != len(cases):
-                      errors.append("case_count_mismatch")
-                  case_ids = [c.get("case_id") for c in cases if isinstance(c, dict)]
+                  declared = report.get("case_count")
+                  if not isinstance(declared, int) or isinstance(declared, bool):
+                      errors.append("report_case_count_not_integer")
+                  elif declared != len(cases):
+                      errors.append("report_case_count_mismatch")
+
+                  case_ids = [row.get("id") for row in cases if isinstance(row, dict)]
                   if len(case_ids) != len(cases):
-                      errors.append("case_entry_not_object")
-                  if len(case_ids) != len(set(case_ids)):
-                      errors.append("duplicate_case_id")
+                      errors.append("report_case_entry_not_object")
                   if any(not isinstance(cid, str) or not cid for cid in case_ids):
-                      errors.append("invalid_case_id")
-                  if any(c.get("matched") is not True for c in cases if isinstance(c, dict)):
-                      errors.append("unmatched_case")
+                      errors.append("report_invalid_case_id")
+                  if len(case_ids) != len(set(case_ids)):
+                      errors.append("report_duplicate_case_id")
+                  if any(row.get("matched") is not True for row in cases if isinstance(row, dict)):
+                      errors.append("report_unmatched_case")
                   if report.get("status") != "PASS":
                       errors.append("consumer_report_not_pass")
+                  if report.get("source_commit") != expected_commit:
+                      errors.append("report_source_commit_mismatch")
 
-                  if not isinstance(index.get("schema"), str) or not index.get("schema"):
-                      errors.append("index_schema_missing")
-                  idx_cases = index.get("cases")
-                  if not isinstance(idx_cases, list):
+                  index_cases = index.get("cases")
+                  if not isinstance(index_cases, list):
                       errors.append("index_cases_not_list")
-                  else:
-                      idx_ids = [c.get("case_id") for c in idx_cases if isinstance(c, dict)]
-                      if len(idx_ids) != len(idx_cases):
-                          errors.append("index_case_entry_not_object")
-                      if len(idx_ids) != len(set(idx_ids)):
-                          errors.append("duplicate_index_case_id")
-                      if set(idx_ids) != set(case_ids):
-                          errors.append("report_index_case_set_mismatch")
+                      index_cases = []
+                  index_ids = [row.get("id") for row in index_cases if isinstance(row, dict)]
+                  if len(index_ids) != len(index_cases):
+                      errors.append("index_case_entry_not_object")
+                  if any(not isinstance(cid, str) or not cid for cid in index_ids):
+                      errors.append("index_invalid_case_id")
+                  if len(index_ids) != len(set(index_ids)):
+                      errors.append("index_duplicate_case_id")
+                  if set(index_ids) != set(case_ids):
+                      errors.append("report_index_case_set_mismatch")
+                  if not isinstance(index.get("case_count"), int) or isinstance(index.get("case_count"), bool):
+                      errors.append("index_case_count_not_integer")
+                  elif index.get("case_count") != len(index_cases) or index.get("case_count") != len(cases):
+                      errors.append("report_index_case_count_mismatch")
 
               preservation_status = "PASS" if not errors else "FAIL"
           except Exception as exc:
@@ -184,8 +195,8 @@ jobs:
               preservation_status = "FAIL"
 
           diagnostics = {
-              "schema": "AURA-C6-RI-RS-PRESERVATION-DIAGNOSTICS/0.1",
-              "tested_source_commit": os.environ.get("AURA_RI_RS_COMMIT"),
+              "schema": "AURA-C6-RI-RS-PRESERVATION-DIAGNOSTICS/0.2",
+              "tested_source_commit": expected_commit,
               "report_path": str(report_path),
               "index_path": str(index_path),
               "report_byte_count": len(report_raw),
@@ -198,12 +209,11 @@ jobs:
               "preservation_status": preservation_status,
               "errors": errors,
           }
-          diagnostics_path.write_text(json.dumps(diagnostics, indent=2, sort_keys=True) + "\\n", encoding="utf-8")
           evidence = {
-              "schema": "AURA-C6-IMPLEMENTATION-EVIDENCE/0.3",
+              "schema": "AURA-C6-IMPLEMENTATION-EVIDENCE/0.4",
               "component": "RI-RS-AURA-GUARD-STRICT-BC021-CONSUMER",
               "repository": "vaidt/aura-guard-v1.3",
-              "tested_source_commit": os.environ.get("AURA_RI_RS_COMMIT"),
+              "tested_source_commit": expected_commit,
               "consumer_blob_sha256": os.environ.get("AURA_RI_RS_SOURCE_BLOB"),
               "lib_blob_sha256": os.environ.get("AURA_RI_RS_LIB_BLOB"),
               "cargo_blob_sha256": os.environ.get("AURA_RI_RS_CARGO_BLOB"),
@@ -221,8 +231,16 @@ jobs:
               "authorization_effect": "NONE",
               "release_effect": "NONE"
           }
-          (evidence_dir / "implementation-evidence.json").write_text(
-              json.dumps(evidence, indent=2, sort_keys=True) + "\\n", encoding="utf-8")
+
+          # Write syntactically valid JSON, including a real terminal LF.
+          for path, payload in (
+              (diagnostics_path, diagnostics),
+              (evidence_dir / "implementation-evidence.json", evidence),
+          ):
+              raw = (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode("utf-8")
+              path.write_bytes(raw)
+              json.loads(path.read_bytes().decode("utf-8"))
+
           print(f"PRESERVATION_STATUS={preservation_status}")
           print(f"PRESERVATION_ERRORS={json.dumps(errors, sort_keys=True)}")
           if errors:
