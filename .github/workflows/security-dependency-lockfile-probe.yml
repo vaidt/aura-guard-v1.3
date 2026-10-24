@@ -1,0 +1,53 @@
+name: Security dependency lockfile probe
+
+on:
+  push:
+    branches:
+      - "security/ecc-stack-migration-rustsec-2026-0387"
+    paths:
+      - ".github/workflows/security-dependency-lockfile-probe.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  resolve:
+    name: Resolve three advisory fixes without unrelated lock drift
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.87.0
+      - name: Resolve fixed versions with Cargo
+        shell: bash
+        env:
+          CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS: fallback
+        run: |
+          set -euo pipefail
+          cargo update -p rustls-webpki@0.103.15 --precise 0.103.16
+          cargo update -p webpki-roots@1.0.7 --precise 1.0.10
+          cargo update -p tokio@1.52.3 --precise 1.54.1
+          python3 - <<'PY'
+          import tomllib
+          from pathlib import Path
+
+          lock = tomllib.loads(Path("Cargo.lock").read_text(encoding="utf-8"))
+          versions = {}
+          for name in ("crypto-bigint", "rustls-webpki", "webpki-roots", "tokio"):
+              versions[name] = sorted({p["version"] for p in lock["package"] if p["name"] == name})
+          print("Resolved security-critical versions:", versions)
+          assert versions["crypto-bigint"] and all(tuple(map(int, v.split(".")[:3])) >= (0, 7, 6) for v in versions["crypto-bigint"])
+          assert "0.103.15" not in versions["rustls-webpki"] and "0.103.16" in versions["rustls-webpki"]
+          assert "1.0.7" not in versions["webpki-roots"] and "1.0.10" in versions["webpki-roots"]
+          assert "1.52.3" not in versions["tokio"] and "1.54.1" in versions["tokio"]
+          PY
+          cargo tree -d
+          rustc --version
+          cargo --version
+          sha256sum Cargo.lock
+      - name: Upload generated lockfile for byte-level review
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-dependency-cargo-lock-candidate
+          path: Cargo.lock
+          if-no-files-found: error
+          retention-days: 3
