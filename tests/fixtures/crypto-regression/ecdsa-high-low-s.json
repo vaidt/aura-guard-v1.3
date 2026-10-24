@@ -1,0 +1,48 @@
+{
+  "schema": "aura.ecdsa-high-low-s.v1",
+  "note": "Test vectors are derived deterministically from the pinned valid Wycheproof tcId=1 vector. They are baseline probes, not a protocol policy decision.",
+  "pairs": [
+    {
+      "curve": "P-256",
+      "source": {
+        "project": "C2SP/Wycheproof",
+        "commit": "d17cc89fa5c8f4f4d378b5385ebf75da5d0926c9",
+        "path": "testvectors_v1/ecdsa_secp256r1_sha256_test.json",
+        "blob_sha1": "19c951dbd3b6e33ed5e28d9bbbeea30e5f0350d3",
+        "tcId": 1,
+        "result": "valid",
+        "comment": "pseudorandom signature"
+      },
+      "signature_transform": "For the pinned valid vector, preserve r and replace s with min(s,n-s) or max(s,n-s); ECDSA's (r,s) and (r,n-s) are mathematically equivalent for message verification.",
+      "public_key_spki_der": "3059301306072a8648ce3d020106082a8648ce3d0301070342000404aaec73635726f213fb8a9e64da3b8632e41495a944d0045b522eba7240fad587d9315798aaa3a5ba01775787ced05eaaf7b4e09fc81d6d1aa546e8365d525d",
+      "message_hex": "",
+      "low_s_hex": "177e60492c5a8242f76f07bfe3661bde59ec2a17ce5bd2dab2abebdf89a62e2",
+      "high_s_hex": "fe8819fa6d3a57dcd0890f8401c99e41d748380c2a31e157488f0c0503c8c26f",
+      "low_s_signature_der": "3045022100b292a619339f6e567a305c951c0dcbcc42d16e47f219f9e98e76e09d8770b34a02200177e60492c5a8242f76f07bfe3661bde59ec2a17ce5bd2dab2abebdf89a62e2",
+      "high_s_signature_der": "3046022100b292a619339f6e567a305c951c0dcbcc42d16e47f219f9e98e76e09d8770b34a022100fe8819fa6d3a57dcd0890f8401c99e41d748380c2a31e157488f0c0503c8c26f",
+      "expected_baseline_low_s": "ACCEPT",
+      "expected_baseline_high_s": "ACCEPT"
+    },
+    {
+      "curve": "P-384",
+      "source": {
+        "project": "C2SP/Wycheproof",
+        "commit": "d17cc89fa5c8f4f4d378b5385ebf75da5d0926c9",
+        "path": "testvectors_v1/ecdsa_secp384r1_sha384_test.json",
+        "blob_sha1": "19df1b5614d68af884d9d197b0d123cc5d22807d",
+        "tcId": 1,
+        "result": "valid",
+        "comment": "pseudorandom signature"
+      },
+      "signature_transform": "For the pinned valid vector, preserve r and replace s with min(s,n-s) or max(s,n-s); ECDSA's (r,s) and (r,n-s) are mathematically equivalent for message verification.",
+      "public_key_spki_der": "3076301006072a8648ce3d020106052b810400220362000429bdb76d5fa741bfd70233cb3a66cc7d44beb3b0663d92a8136650478bcefb61ef182e155a54345a5e8e5e88f064e5bc9a525ab7f764dad3dae1468c2b419f3b62b9ba917d5e8c4fb1ec47404a3fc76474b2713081be9db4c00e043ada9fc4a3",
+      "message_hex": "",
+      "low_s_hex": "4326756fb2c4fd726360dd6479b5849478c7a9d054a833a58c1631c33b63c3441336ddf2c7fe0ed129aae6d4ddfeb753",
+      "high_s_hex": "bcd98a904d3b028d9c9f229b864a7b6b8738562fab57cc5a3b4d1bbeb8d36a9b44e32fbf80b298a9c3413295eec67220",
+      "low_s_signature_der": "3064023032401249714e9091f05a5e109d5c1216fdc05e98614261aa0dbd9e9cd4415dee29238afbd3b103c1e40ee5c9144aee0f02304326756fb2c4fd726360dd6479b5849478c7a9d054a833a58c1631c33b63c3441336ddf2c7fe0ed129aae6d4ddfeb753",
+      "high_s_signature_der": "3065023032401249714e9091f05a5e109d5c1216fdc05e98614261aa0dbd9e9cd4415dee29238afbd3b103c1e40ee5c9144aee0f023100bcd98a904d3b028d9c9f229b864a7b6b8738562fab57cc5a3b4d1bbeb8d36a9b44e32fbf80b298a9c3413295eec67220",
+      "expected_baseline_low_s": "ACCEPT",
+      "expected_baseline_high_s": "ACCEPT"
+    }
+  ]
+}
