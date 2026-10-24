@@ -204,10 +204,17 @@ jobs:
           expected_checkct = "85271e5ce9eab9ba895c62c8b5d4129810a635a0"
           expected_branch = "ops/binsec-fix-test"
 
-          def run(args, cwd=None):
-              result = subprocess.run(args, cwd=cwd, check=True, text=True,
-                                      stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-              return result.stdout.strip()
+          def run(args, cwd=None, optional=False):
+              try:
+                  result = subprocess.run(args, cwd=cwd, check=not optional, text=True,
+                                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+                  if optional and result.returncode != 0:
+                      return "NOT_AVAILABLE: exit_code=" + str(result.returncode) + " output=" + result.stdout.strip()
+                  return result.stdout.strip()
+              except (FileNotFoundError, subprocess.CalledProcessError) as exc:
+                  if optional:
+                      return "NOT_AVAILABLE: " + repr(exc)
+                  raise
 
           event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text(encoding="utf-8"))
           if os.environ.get("GITHUB_EVENT_NAME") != "push":
@@ -244,18 +251,18 @@ jobs:
           print("expected_crypto_bigint_commit=" + expected_crypto)
           print("expected_cargo_checkct_commit=" + expected_checkct)
 
-          for name, args, cwd in [
+          for name, args, cwd, optional in [
               ("rustc_version_verbose", ["rustc", "--version", "--verbose"], "crypto-bigint-source/checkct"),
               ("cargo_version", ["cargo", "--version"], "crypto-bigint-source/checkct"),
-              ("rustup_active_toolchain", ["rustup", "show", "active-toolchain"], None),
-              ("binsec_version", ["binsec", "-version"], None),
-              ("opam_version", ["opam", "--version"], None),
-              ("ocamlc_version", ["ocamlc", "-version"], None),
-              ("nm_version", ["nm", "--version"], None),
+              ("rustup_active_toolchain", ["rustup", "show", "active-toolchain"], "crypto-bigint-source/checkct", False),
+              ("binsec_version", ["binsec", "-version"], None, False),
+              ("opam_version", ["opam", "--version"], None, True),
+              ("ocamlc_version", ["ocamlc", "-version"], None, True),
+              ("nm_version", ["nm", "--version"], None, False),
               ("python_version", ["python3", "--version"], None),
               ("cargo_checkct_help", [os.environ["RUNNER_TEMP"] + "/cargo-checkct-hardened/bin/cargo-checkct", "--help"], None),
           ]:
-              output = run(args, cwd=cwd)
+              output = run(args, cwd=cwd, optional=optional)
               if name == "nm_version":
                   output = "\n".join(output.splitlines()[:2])
               if name == "cargo_checkct_help":
