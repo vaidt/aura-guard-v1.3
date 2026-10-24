@@ -186,53 +186,81 @@ jobs:
           cargo install --locked --path cargo-checkct-source --root "$RUNNER_TEMP/cargo-checkct-hardened" --force > binsec-evidence/cargo-checkct-install.log 2>&1
           cat binsec-evidence/cargo-checkct-install.log
           test -x "$RUNNER_TEMP/cargo-checkct-hardened/bin/cargo-checkct"
-      - name: Record source identities and tool versions
+      - name: Record exact source identities and tool versions
         shell: bash
         run: |
           set -euo pipefail
-          {
-            echo "aura_repository=vaidt/aura-guard-v1.3"
-            git -C "$GITHUB_WORKSPACE" rev-parse HEAD
-            echo "event=$GITHUB_EVENT_NAME"
-            echo "run_id=$GITHUB_RUN_ID"
-            echo "run_attempt=$GITHUB_RUN_ATTEMPT"
-            python3 - <<'PY'
-            import json, os, subprocess
-            from pathlib import Path
-            event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text(encoding="utf-8"))
-            expected = "f94e269e5a2098ef374dcfb7dc8ceef09d08c4ed"
-            if os.environ.get("GITHUB_EVENT_NAME") != "push":
-                raise SystemExit("FAIL-CLOSED: this test is only valid for the isolated push trigger")
-            if event.get("ref") != "refs/heads/ops/binsec-fix-test":
-                raise SystemExit("FAIL-CLOSED: unexpected ref: " + str(event.get("ref")))
-            head = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
-            merge_base = subprocess.check_output(["git", "merge-base", "HEAD", expected], text=True).strip()
-            if merge_base != expected:
-                raise SystemExit("FAIL-CLOSED: commit history is not based on the approved exact SHA")
-            print("requested_base_sha=" + expected)
-            print("tested_head_sha=" + head)
-            print("git_merge_base=" + merge_base)
-            print("push_before_sha=" + str(event.get("before", "")))
-            print("push_after_sha=" + str(event.get("after", "")))
-            if event.get("after") != head:
-                raise SystemExit("FAIL-CLOSED: event after SHA differs from checked-out HEAD")
-            PY
-            echo "crypto_bigint_commit=$(git -C crypto-bigint-source rev-parse HEAD)"
-            echo "cargo_checkct_commit=$(git -C cargo-checkct-source rev-parse HEAD)"
-            echo "expected_crypto_bigint_commit=f17d82ad761de4140c6c22f835ddaead1a434f57"
-            echo "expected_cargo_checkct_commit=85271e5ce9eab9ba895c62c8b5d4129810a635a0"
-            git -C crypto-bigint-source rev-parse HEAD | grep -Fx "f17d82ad761de4140c6c22f835ddaead1a434f57"
-            git -C cargo-checkct-source rev-parse HEAD | grep -Fx "85271e5ce9eab9ba895c62c8b5d4129810a635a0"
-            (cd crypto-bigint-source/checkct && rustc --version --verbose)
-            (cd crypto-bigint-source/checkct && cargo --version)
-            rustup show active-toolchain
-            binsec -version
-            opam --version
-            ocamlc -version
-            nm --version | head -n 2
-            python3 --version
-            "$RUNNER_TEMP/cargo-checkct-hardened/bin/cargo-checkct" --help | head -n 30
-          } > binsec-evidence/tool-versions-and-source-sha.txt 2>&1
+          mkdir -p binsec-evidence
+          python3 - <<'PY' > binsec-evidence/tool-versions-and-source-sha.txt 2>&1
+          import json
+          import os
+          import subprocess
+          from pathlib import Path
+
+          expected_base = "f94e269e5a2098ef374dcfb7dc8ceef09d08c4ed"
+          expected_crypto = "f17d82ad761de4140c6c22f835ddaead1a434f57"
+          expected_checkct = "85271e5ce9eab9ba895c62c8b5d4129810a635a0"
+          expected_branch = "ops/binsec-fix-test"
+
+          def run(args, cwd=None):
+              result = subprocess.run(args, cwd=cwd, check=True, text=True,
+                                      stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+              return result.stdout.strip()
+
+          event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text(encoding="utf-8"))
+          if os.environ.get("GITHUB_EVENT_NAME") != "push":
+              raise SystemExit("FAIL-CLOSED: this test is only valid for the isolated push trigger")
+          if event.get("ref") != "refs/heads/" + expected_branch:
+              raise SystemExit("FAIL-CLOSED: unexpected ref: " + str(event.get("ref")))
+
+          head = run(["git", "rev-parse", "HEAD"])
+          merge_base = run(["git", "merge-base", "HEAD", expected_base])
+          if merge_base != expected_base:
+              raise SystemExit("FAIL-CLOSED: commit history is not based on the approved exact SHA")
+          if event.get("after") != head:
+              raise SystemExit("FAIL-CLOSED: event after SHA differs from checked-out HEAD")
+
+          crypto_sha = run(["git", "-C", "crypto-bigint-source", "rev-parse", "HEAD"])
+          checkct_sha = run(["git", "-C", "cargo-checkct-source", "rev-parse", "HEAD"])
+          if crypto_sha != expected_crypto:
+              raise SystemExit("FAIL-CLOSED: crypto-bigint checkout SHA mismatch: " + crypto_sha)
+          if checkct_sha != expected_checkct:
+              raise SystemExit("FAIL-CLOSED: cargo-checkct checkout SHA mismatch: " + checkct_sha)
+
+          print("repository=vaidt/aura-guard-v1.3")
+          print("branch=" + expected_branch)
+          print("event=" + os.environ["GITHUB_EVENT_NAME"])
+          print("run_id=" + os.environ["GITHUB_RUN_ID"])
+          print("run_attempt=" + os.environ["GITHUB_RUN_ATTEMPT"])
+          print("requested_base_sha=" + expected_base)
+          print("tested_head_sha=" + head)
+          print("git_merge_base=" + merge_base)
+          print("push_before_sha=" + str(event.get("before", "")))
+          print("push_after_sha=" + str(event.get("after", "")))
+          print("crypto_bigint_commit=" + crypto_sha)
+          print("cargo_checkct_commit=" + checkct_sha)
+          print("expected_crypto_bigint_commit=" + expected_crypto)
+          print("expected_cargo_checkct_commit=" + expected_checkct)
+
+          for name, args, cwd in [
+              ("rustc_version_verbose", ["rustc", "--version", "--verbose"], "crypto-bigint-source/checkct"),
+              ("cargo_version", ["cargo", "--version"], "crypto-bigint-source/checkct"),
+              ("rustup_active_toolchain", ["rustup", "show", "active-toolchain"], None),
+              ("binsec_version", ["binsec", "-version"], None),
+              ("opam_version", ["opam", "--version"], None),
+              ("ocamlc_version", ["ocamlc", "-version"], None),
+              ("nm_version", ["nm", "--version"], None),
+              ("python_version", ["python3", "--version"], None),
+              ("cargo_checkct_help", [os.environ["RUNNER_TEMP"] + "/cargo-checkct-hardened/bin/cargo-checkct", "--help"], None),
+          ]:
+              output = run(args, cwd=cwd)
+              if name == "nm_version":
+                  output = "\n".join(output.splitlines()[:2])
+              if name == "cargo_checkct_help":
+                  output = "\n".join(output.splitlines()[:30])
+              print("\n[" + name + "]")
+              print(output)
+          PY
           cat binsec-evidence/tool-versions-and-source-sha.txt
       - name: Build drivers and verify __checkct_panic with nm before BINSEC
         shell: bash
