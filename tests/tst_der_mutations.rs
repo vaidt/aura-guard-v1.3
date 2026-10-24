@@ -76,8 +76,8 @@ fn generated_der_negative_vectors_are_rejected_by_production_verifier() {
             case.source_file,
             case.target_path,
         );
-        let imprint_vec = hex::decode(&case.expected_message_imprint_sha256)
-            .expect("expected imprint is hex");
+        let imprint_vec =
+            hex::decode(&case.expected_message_imprint_sha256).expect("expected imprint is hex");
         let imprint: [u8; 32] = imprint_vec
             .try_into()
             .expect("SHA-256 imprint must contain exactly 32 bytes");
