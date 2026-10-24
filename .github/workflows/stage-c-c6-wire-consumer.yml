@@ -48,6 +48,13 @@ jobs:
           ref: 6b4f3dcc46841bb17fafa3e1b1cc8ea9c0397330
           path: aura-specification
 
+      - name: Check out workflow-owned preservation validator
+        uses: actions/checkout@v4
+        with:
+          repository: vaidt/aura-guard-v1.3
+          ref: ${{ github.sha }}
+          path: guard-tooling
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -87,7 +94,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p artifacts/c6-ri-rs-consumer
-          python scripts/stage_c/validate_ri_rs_preservation.py
+          python guard-tooling/scripts/stage_c/validate_ri_rs_preservation.py
           python -m json.tool artifacts/c6-ri-rs-consumer/implementation-evidence.json >/dev/null
           python -m json.tool artifacts/c6-ri-rs-consumer/preservation-diagnostics.json >/dev/null
 
