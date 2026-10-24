@@ -78,13 +78,126 @@ jobs:
         if: always()
         shell: bash
         run: |
+          set -euo pipefail
           mkdir -p artifacts/c6-ri-rs-consumer
           python - <<'PY'
-          import json, os, pathlib
-          p = pathlib.Path("aura-specification/artifacts/stage-c/c6-wire-corpus/results/ri-rs-results.json")
-          report = json.loads(p.read_text()) if p.exists() else None
+          import hashlib
+          import json
+          import os
+          import pathlib
+          import sys
+
+          root = pathlib.Path("aura-specification/artifacts/stage-c/c6-wire-corpus")
+          report_path = root / "results/ri-rs-results.json"
+          index_path = root / "index.json"
+          evidence_dir = pathlib.Path("artifacts/c6-ri-rs-consumer")
+          diagnostics_path = evidence_dir / "preservation-diagnostics.json"
+          preservation_status = "FAIL"
+          errors = []
+          report = None
+          index = None
+          report_raw = b""
+          index_raw = b""
+          report_sha = None
+          index_sha = None
+
+          def record_file(path):
+              if not path.is_file():
+                  errors.append(f"missing_file:{path}")
+                  return b"", None
+              raw = path.read_bytes()
+              digest = hashlib.sha256(raw).hexdigest()
+              print(f"PRESERVE_PATH={path}")
+              print(f"PRESERVE_BYTE_COUNT={len(raw)}")
+              print(f"PRESERVE_SHA256={digest}")
+              return raw, digest
+
+          try:
+              report_raw, report_sha = record_file(report_path)
+              index_raw, index_sha = record_file(index_path)
+
+              # Parse exactly the bytes whose hash/length were recorded above.
+              if report_raw:
+                  try:
+                      report = json.loads(report_raw.decode("utf-8"))
+                  except Exception as exc:
+                      errors.append(f"report_json_parse_error:{type(exc).__name__}:{exc}")
+              if index_raw:
+                  try:
+                      index = json.loads(index_raw.decode("utf-8"))
+                  except Exception as exc:
+                      errors.append(f"index_json_parse_error:{type(exc).__name__}:{exc}")
+
+              if not isinstance(report, dict):
+                  errors.append("report_not_json_object")
+              if not isinstance(index, dict):
+                  errors.append("index_not_json_object")
+
+              if isinstance(report, dict) and isinstance(index, dict):
+                  if report.get("schema") != "AURA-BC021-WIRE-CONSUMER-RESULTS/0.1":
+                      errors.append("unexpected_report_schema")
+                  if report.get("index_sha256") != index_sha:
+                      errors.append("report_index_sha256_mismatch")
+                  cases = report.get("cases")
+                  if not isinstance(cases, list):
+                      errors.append("report_cases_not_list")
+                      cases = []
+                  expected_count = report.get("case_count")
+                  if not isinstance(expected_count, int) or isinstance(expected_count, bool):
+                      errors.append("case_count_not_integer")
+                  elif expected_count != len(cases):
+                      errors.append("case_count_mismatch")
+                  case_ids = [c.get("case_id") for c in cases if isinstance(c, dict)]
+                  if len(case_ids) != len(cases):
+                      errors.append("case_entry_not_object")
+                  if len(case_ids) != len(set(case_ids)):
+                      errors.append("duplicate_case_id")
+                  if any(not isinstance(cid, str) or not cid for cid in case_ids):
+                      errors.append("invalid_case_id")
+                  if any(c.get("matched") is not True for c in cases if isinstance(c, dict)):
+                      errors.append("unmatched_case")
+                  if report.get("status") != "PASS":
+                      errors.append("consumer_report_not_pass")
+
+                  # Validate shared index identity against the parsed report.
+                  idx_schema = index.get("schema")
+                  if not isinstance(idx_schema, str) or not idx_schema:
+                      errors.append("index_schema_missing")
+                  idx_cases = index.get("cases")
+                  if not isinstance(idx_cases, list):
+                      errors.append("index_cases_not_list")
+                  else:
+                      idx_ids = [c.get("case_id") for c in idx_cases if isinstance(c, dict)]
+                      if len(idx_ids) != len(idx_cases):
+                          errors.append("index_case_entry_not_object")
+                      if len(idx_ids) != len(set(idx_ids)):
+                          errors.append("duplicate_index_case_id")
+                      if set(idx_ids) != set(case_ids):
+                          errors.append("report_index_case_set_mismatch")
+
+              preservation_status = "PASS" if not errors else "FAIL"
+          except Exception as exc:
+              errors.append(f"preservation_exception:{type(exc).__name__}:{exc}")
+              preservation_status = "FAIL"
+
+          diagnostics = {
+              "schema": "AURA-C6-RI-RS-PRESERVATION-DIAGNOSTICS/0.1",
+              "report_path": str(report_path),
+              "index_path": str(index_path),
+              "report_byte_count": len(report_raw),
+              "report_sha256": report_sha,
+              "index_byte_count": len(index_raw),
+              "index_sha256": index_sha,
+              "report_status": report.get("status") if isinstance(report, dict) else None,
+              "case_count_declared": report.get("case_count") if isinstance(report, dict) else None,
+              "case_count_actual": len(report.get("cases", [])) if isinstance(report, dict) and isinstance(report.get("cases"), list) else None,
+              "preservation_status": preservation_status,
+              "errors": errors,
+          }
+          diagnostics_path.write_text(json.dumps(diagnostics, indent=2, sort_keys=True) + "\\n", encoding="utf-8")
+
           evidence = {
-              "schema": "AURA-C6-IMPLEMENTATION-EVIDENCE/0.2",
+              "schema": "AURA-C6-IMPLEMENTATION-EVIDENCE/0.3",
               "component": "RI-RS-AURA-GUARD-STRICT-BC021-CONSUMER",
               "repository": "vaidt/aura-guard-v1.3",
               "tested_source_commit": os.environ.get("AURA_RI_RS_COMMIT"),
@@ -92,19 +205,29 @@ jobs:
               "lib_blob_sha256": os.environ.get("AURA_RI_RS_LIB_BLOB"),
               "cargo_blob_sha256": os.environ.get("AURA_RI_RS_CARGO_BLOB"),
               "test_blob_sha256": os.environ.get("AURA_RI_RS_TEST_BLOB"),
-              "shared_index_sha256": report.get("index_sha256") if report else None,
-              "case_count": report.get("case_count") if report else 0,
-              "consumer_report_status": report.get("status") if report else "NOT_AVAILABLE",
+              "shared_index_sha256": index_sha,
+              "consumer_report_sha256": report_sha,
+              "consumer_report_bytes": len(report_raw),
+              "case_count": report.get("case_count") if isinstance(report, dict) else 0,
+              "consumer_report_status": report.get("status") if isinstance(report, dict) else "NOT_AVAILABLE",
+              "preservation_status": preservation_status,
+              "preservation_errors": errors,
               "c6_gate_status": "BLOCKED_PENDING_EVIDENCE_REVIEW",
               "authority": "NONE",
               "governance_effect": "NONE",
               "authorization_effect": "NONE",
               "release_effect": "NONE"
           }
-          pathlib.Path("artifacts/c6-ri-rs-consumer/implementation-evidence.json").write_text(
+          (evidence_dir / "implementation-evidence.json").write_text(
               json.dumps(evidence, indent=2, sort_keys=True) + "\\n", encoding="utf-8")
+
+          print(f"PRESERVATION_STATUS={preservation_status}")
+          print(f"PRESERVATION_ERRORS={json.dumps(errors, sort_keys=True)}")
+          if errors:
+              sys.exit(1)
           PY
           python -m json.tool artifacts/c6-ri-rs-consumer/implementation-evidence.json >/dev/null
+          python -m json.tool artifacts/c6-ri-rs-consumer/preservation-diagnostics.json >/dev/null
 
       - name: Upload RI-RS consumer evidence
         if: always()
