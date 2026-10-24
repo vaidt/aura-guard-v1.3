@@ -21,6 +21,7 @@ pub mod metrics;
 pub mod models;
 pub mod normalizer;
 pub mod policy;
+pub mod receipt;
 pub mod rfc3161;
 pub mod sealer;
 pub mod segment;
