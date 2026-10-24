@@ -23,8 +23,49 @@ permissions:
 jobs:
   strict-wire:
     runs-on: ubuntu-latest
+    env:
+      AURA_SOURCE_COMMIT: ${{ github.sha }}
+      AURA_BASE_SOURCE_COMMIT: fd5f6e90940225e9f8ffe23707382669bdfaba82
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.86.0
       - name: Run strict BC-02.1 consumer tests
+        id: strict-tests
         run: cargo test --test strict_wire_c6 -- --nocapture
+      - name: Preserve pinned RI-RS consumer evidence
+        if: always()
+        env:
+          TEST_OUTCOME: ${{ steps.strict-tests.outcome }}
+        run: |
+          mkdir -p artifacts/c6-ri-rs-consumer
+          parser_blob=$(git rev-parse "${GITHUB_SHA}:conformance/strict_wire.rs")
+          test_blob=$(git rev-parse "${GITHUB_SHA}:conformance/strict_wire_c6.rs")
+          corpus_sha=$(sha256sum conformance/STAGE-C-C6-BC02.1-WIRE-MUTATIONS-v0.1.json | cut -d' ' -f1)
+          cat > artifacts/c6-ri-rs-consumer/implementation-evidence.json <<EOF
+          {
+            "schema": "AURA-C6-IMPLEMENTATION-EVIDENCE/0.1",
+            "component": "RI-RS-STRICT-CONSUMER-MIRROR",
+            "repository": "vaidt/aura-guard-v1.3",
+            "base_source_commit": "${AURA_BASE_SOURCE_COMMIT}",
+            "tested_head_sha": "${GITHUB_SHA}",
+            "consumer_parser_blob_sha": "${parser_blob}",
+            "test_blob_sha": "${test_blob}",
+            "shared_corpus_sha256": "${corpus_sha}",
+            "tests_outcome": "${TEST_OUTCOME}",
+            "receipt_producer_flow": "NOT_EXECUTED_IN_THIS_REPOSITORY",
+            "native_RI_RS_producer_flow_repository": "vaidt/aura-specification",
+            "c6_gate_status": "BLOCKED_NOT_EXECUTED",
+            "authority": "NONE",
+            "governance_effect": "NONE",
+            "release_effect": "NONE"
+          }
+          EOF
+          python -m json.tool artifacts/c6-ri-rs-consumer/implementation-evidence.json >/dev/null
+      - name: Upload RI-RS consumer evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: c6-ri-rs-consumer-evidence
+          path: artifacts/c6-ri-rs-consumer/
+          if-no-files-found: error
+          retention-days: 14
