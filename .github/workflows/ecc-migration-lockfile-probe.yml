@@ -21,21 +21,16 @@ jobs:
       - name: Resolve compatible patched ECC dependency graph
         shell: bash
         env:
-          # Cargo 1.84+ should prefer dependency releases whose MSRV is
-          # compatible with this crate's rust-version = "1.86".
+          # Cargo 1.84+ prefers dependency releases compatible with this
+          # crate's declared rust-version = "1.86".
           CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS: fallback
         run: |
           set -euo pipefail
           cargo update -p p256 --precise 0.14.0
           cargo update -p p384 --precise 0.14.0
           cargo update -p ecdsa --precise 0.17.0
-          # If the resolver picked a newer dependency before applying fallback,
-          # pin compatible patched versions explicitly rather than raising MSRV.
-          cargo update -p elliptic-curve@0.14.2 --precise 0.14.1 || true
-          cargo update -p crypto-bigint@0.7.7 --precise 0.7.6 || cargo update -p crypto-bigint --precise 0.7.6
-          cargo update -p ctutils@0.4.5 --precise 0.4.4 || true
-          cargo update -p sha2@0.11.1 --precise 0.11.0 || true
 
+          # Fail closed: patched, MSRV-compatible release must be in the graph.
           cargo tree -i crypto-bigint@0.7.6
           if cargo tree -i crypto-bigint@0.5.5; then
             echo "FAIL: vulnerable crypto-bigint 0.5.5 remains in the resolved graph"
@@ -44,7 +39,6 @@ jobs:
           rustc --version
           cargo --version
           cargo tree -d
-          echo "CANDIDATE_LOCK_SHA256=$(sha256sum Cargo.lock | cut -d ' ' -f1)" >> "$GITHUB_ENV"
           sha256sum Cargo.lock
       - name: Upload generated lockfile for explicit human review
         uses: actions/upload-artifact@v4
