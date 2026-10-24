@@ -358,9 +358,9 @@ jobs:
           if re.search(r"does not define __checkct_panic|UNEXPECTED binsec output|failed to run binsec|Program status is : (unknown|insecure)", log, re.I):
               errors.append("analysis log contains missing-sentinel, unparsed, failed, unknown, or insecure evidence")
           coverage_warning_pattern = re.compile(
-              r"^\\s*warning:.*(?:coverage|incomplete|unknown|unresolved|panic|"
-              r"timed?\\s*out|timeout|cannot conclude|could not conclude|"
-              r"not\\s+(?:fully\\s+)?(?:analysed|analyzed)|skipped)",
+              r"^\s*warning:.*(?:coverage|incomplete|unknown|unresolved|panic|"
+              r"timed?\s*out|timeout|cannot conclude|could not conclude|"
+              r"not\s+(?:fully\s+)?(?:analysed|analyzed)|skipped)",
               re.I | re.M,
           )
           coverage_warning_fixtures = [
