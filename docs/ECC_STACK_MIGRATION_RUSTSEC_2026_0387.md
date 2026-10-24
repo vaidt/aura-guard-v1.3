@@ -13,18 +13,22 @@ The recorded baseline run passed all three tests. The ECDSA corpus is test-only 
 
 ## Candidate dependency change
 
-This branch changes only the ECC package constraints:
+This branch changes:
 - `p256 = 0.14.0`
 - `p384 = 0.14.0`
 - direct `ecdsa = 0.17.0`
+- the declared minimum supported Rust version from 1.86 to 1.87, with functional CI pins updated to 1.87.
+
+**Why the MSRV change is necessary:** the upstream `crypto-bigint 0.7.6` manifest declares `rust-version = "1.87"`; the Rust-1.86-compatible resolver therefore selected `crypto-bigint 0.7.5`, which remains inside the vulnerable range. Keeping Rust 1.86 while claiming RUSTSEC-2026-0387 is fixed would be false. The MSRV change is explicit in Cargo.toml, README and CI and remains subject to compatibility review. The resolver uses Cargo's incompatible-Rust-version fallback so dependencies requiring Rust 1.88 (notably `sha2 0.11.1`) should be kept at an MSRV-compatible release such as `sha2 0.11.0`; the lockfile must prove the final choice.
 
 The direct `signature = 2` dependency is intentionally retained because the existing RSA verifier uses the `signature 2` trait ecosystem. The ECDSA curve APIs re-export their corresponding `signature 3` prehash trait, which is imported locally in the relevant P-256/P-384 verification branches.
 
-The exact lockfile is not accepted from a guessed or hand-edited dependency graph. A branch-scoped, read-only resolver workflow runs `cargo update` for the ECC stack and explicitly pins `crypto-bigint 0.7.6`; it publishes the resulting Cargo.lock as a short-lived artifact for review. The artifact must be checked for:
+The exact lockfile is not accepted from a guessed or hand-edited dependency graph. A branch-scoped resolver workflow runs `cargo update` for the ECC stack with `CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS=fallback`, then asserts that `crypto-bigint 0.7.6` is present and `crypto-bigint 0.5.5` is absent. It publishes the resulting Cargo.lock as a short-lived artifact for review. The artifact must be checked for:
 - exact package versions and checksums;
 - no remaining `crypto-bigint 0.5.x` in the resolved graph;
 - no unexpected unrelated upgrades;
-- the entire ECDSA dependency path resolving to `crypto-bigint >= 0.7.6`.
+- the entire ECDSA dependency path resolving to `crypto-bigint >= 0.7.6`;
+- no dependency that forces Rust 1.88 when the documented MSRV remains 1.87.
 
 The resolver workflow is temporary tooling and must be removed from the final PR after the lockfile is recovered and reviewed. It does not push commits or mutate the branch.
 
