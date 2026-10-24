@@ -39,7 +39,7 @@ jobs:
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.target_ref || github.event.pull_request.head.sha || github.sha }}
 
-      - uses: dtolnay/rust-toolchain@1.86.0
+      - uses: dtolnay/rust-toolchain@1.87.0
 
       - name: Check out pinned AURA specification corpus and materializer
         uses: actions/checkout@v4
