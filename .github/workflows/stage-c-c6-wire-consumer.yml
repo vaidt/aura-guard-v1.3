@@ -29,7 +29,15 @@ permissions:
 
 jobs:
   strict-wire:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     env:
       CARGO_TERM_COLOR: always
       RUST_BACKTRACE: 1
@@ -102,10 +110,127 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: c6-ri-rs-consumer-evidence
+          name: c6-ri-rs-consumer-evidence-${{ matrix.arch }}
           path: |
             artifacts/c6-ri-rs-consumer/
             aura-specification/artifacts/stage-c/c6-wire-corpus/index.json
             aura-specification/artifacts/stage-c/c6-wire-corpus/results/ri-rs-results.json
           if-no-files-found: warn
+          retention-days: 14
+
+
+  compare-architectures:
+    name: Compare x86_64 and aarch64 evidence bytes
+    needs: [strict-wire]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download both architecture evidence packages
+        uses: actions/download-artifact@v4
+        with:
+          pattern: c6-ri-rs-consumer-evidence-*
+          path: comparison-inputs
+          merge-multiple: false
+
+      - name: Compare exact reports, indexes and preservation evidence
+        shell: bash
+        env:
+          EXPECTED_TARGET_REF: \${{ inputs.target_ref }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path("comparison-inputs")
+          arch_dirs = {p.name.rsplit("-", 1)[-1]: p for p in root.iterdir() if p.is_dir()}
+          required_arches = {"x86_64", "aarch64"}
+          if set(arch_dirs) != required_arches:
+              raise SystemExit(f"FAIL: expected both architecture artifacts, got {sorted(arch_dirs)}")
+
+          members = {
+              "evidence": Path("artifacts/c6-ri-rs-consumer/implementation-evidence.json"),
+              "diagnostics": Path("artifacts/c6-ri-rs-consumer/preservation-diagnostics.json"),
+              "index": Path("aura-specification/artifacts/stage-c/c6-wire-corpus/index.json"),
+              "results": Path("aura-specification/artifacts/stage-c/c6-wire-corpus/results/ri-rs-results.json"),
+          }
+          per_arch = {}
+          byte_sets = {}
+          source_commit = os.environ["EXPECTED_TARGET_REF"]
+
+          for arch, directory in sorted(arch_dirs.items()):
+              raws = {name: (directory / path).read_bytes() for name, path in members.items()}
+              docs = {name: json.loads(raw.decode("utf-8")) for name, raw in raws.items()}
+              evidence = docs["evidence"]
+              diagnostics = docs["diagnostics"]
+              index = docs["index"]
+              report = docs["results"]
+
+              if evidence.get("schema") != "AURA-C6-IMPLEMENTATION-EVIDENCE/0.5":
+                  raise SystemExit(f"FAIL: {arch} did not emit evidence schema 0.5")
+              if evidence.get("tested_source_commit") != source_commit:
+                  raise SystemExit(f"FAIL: {arch} tested unexpected source commit")
+              if evidence.get("case_count") != 27 or report.get("case_count") != 27 or index.get("case_count") != 27:
+                  raise SystemExit(f"FAIL: {arch} does not report the complete 27-case C6 corpus")
+              if report.get("status") != "PASS" or report.get("mismatches") != []:
+                  raise SystemExit(f"FAIL: C6 cases did not all match on {arch}")
+              if not all(case.get("matched") is True for case in report.get("cases", [])):
+                  raise SystemExit(f"FAIL: at least one case is not matched on {arch}")
+              if diagnostics.get("preservation_status") != "PASS" or diagnostics.get("errors") != []:
+                  raise SystemExit(f"FAIL: preservation failed on {arch}")
+              if evidence.get("authority") != "NONE" or evidence.get("authorization_effect") != "NONE":
+                  raise SystemExit(f"FAIL: unexpected authority field in {arch} evidence")
+
+              sha256 = {name: hashlib.sha256(raw).hexdigest() for name, raw in raws.items()}
+              if evidence.get("shared_index_sha256") != sha256["index"]:
+                  raise SystemExit(f"FAIL: evidence/index hash binding is wrong on {arch}")
+              if evidence.get("consumer_report_sha256") != sha256["results"]:
+                  raise SystemExit(f"FAIL: evidence/report hash binding is wrong on {arch}")
+              if report.get("index_sha256") != sha256["index"]:
+                  raise SystemExit(f"FAIL: report/index hash binding is wrong on {arch}")
+
+              for source in ("consumer", "lib", "cargo", "test"):
+                  oid = evidence.get(f"{source}_git_blob_oid")
+                  digest = evidence.get(f"{source}_content_sha256")
+                  if not isinstance(oid, str) or len(oid) != 40:
+                      raise SystemExit(f"FAIL: {arch} has invalid {source} Git blob OID")
+                  if not isinstance(digest, str) or len(digest) != 64:
+                      raise SystemExit(f"FAIL: {arch} has invalid {source} SHA-256 content digest")
+
+              per_arch[arch] = {
+                  "case_count": report["case_count"],
+                  "matched_cases": sum(case.get("matched") is True for case in report["cases"]),
+                  "sha256": sha256,
+                  "source_commit": evidence["tested_source_commit"],
+              }
+              byte_sets[arch] = raws
+
+          differences = []
+          for member in members:
+              if byte_sets["x86_64"][member] != byte_sets["aarch64"][member]:
+                  differences.append(member)
+          if differences:
+              raise SystemExit(f"FAIL: byte-level cross-architecture differences: {differences}")
+
+          result = {
+              "schema": "AURA-C6-CROSS-ARCH-DETERMINISM/0.1",
+              "result": "PASS",
+              "tested_source_commit": source_commit,
+              "architectures": per_arch,
+              "byte_identical_members": sorted(members),
+              "byte_differences": [],
+              "interpretation": "Exact equality of the four preserved C6 evidence members across x86_64 and aarch64; this is not proof of general constant-time behavior.",
+          }
+          out = Path("strict-wire-cross-arch-determinism.json")
+          out.write_text(json.dumps(result, indent=2, sort_keys=True) + "\\n", encoding="utf-8")
+          print(out.read_text(encoding="utf-8"))
+          PY
+
+      - name: Upload cross-architecture determinism report
+        uses: actions/upload-artifact@v4
+        with:
+          name: strict-wire-cross-arch-determinism
+          path: strict-wire-cross-arch-determinism.json
+          if-no-files-found: error
           retention-days: 14
