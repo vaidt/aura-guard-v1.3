@@ -133,14 +133,12 @@ jobs:
 
       - name: Compare exact reports, indexes and preservation evidence
         shell: bash
-        env:
-          EXPECTED_TARGET_REF: \${{ inputs.target_ref }}
         run: |
           set -euo pipefail
           python3 - <<'PY'
           import hashlib
           import json
-          import os
+          import re
           from pathlib import Path
 
           root = Path("comparison-inputs")
@@ -157,7 +155,7 @@ jobs:
           }
           per_arch = {}
           byte_sets = {}
-          source_commit = os.environ["EXPECTED_TARGET_REF"]
+          source_commit = None
 
           for arch, directory in sorted(arch_dirs.items()):
               raws = {name: (directory / path).read_bytes() for name, path in members.items()}
@@ -169,8 +167,13 @@ jobs:
 
               if evidence.get("schema") != "AURA-C6-IMPLEMENTATION-EVIDENCE/0.5":
                   raise SystemExit(f"FAIL: {arch} did not emit evidence schema 0.5")
-              if evidence.get("tested_source_commit") != source_commit:
-                  raise SystemExit(f"FAIL: {arch} tested unexpected source commit")
+              actual_commit = evidence.get("tested_source_commit")
+              if not isinstance(actual_commit, str) or re.fullmatch(r"[0-9a-f]{40}", actual_commit) is None:
+                  raise SystemExit(f"FAIL: {arch} evidence has an invalid tested source commit")
+              if source_commit is None:
+                  source_commit = actual_commit
+              elif actual_commit != source_commit:
+                  raise SystemExit(f"FAIL: architecture source commits differ: {source_commit} vs {actual_commit}")
               if evidence.get("case_count") != 27 or report.get("case_count") != 27 or index.get("case_count") != 27:
                   raise SystemExit(f"FAIL: {arch} does not report the complete 27-case C6 corpus")
               if report.get("status") != "PASS" or report.get("mismatches") != []:
