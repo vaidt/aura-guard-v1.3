@@ -1115,7 +1115,9 @@ mod ecdsa_wycheproof_regression_tests {
     #[test]
     fn wycheproof_ecdsa_secp256r1_sha256_baseline() {
         run_wycheproof_file(
-            include_str!("../tests/fixtures/crypto-regression/wycheproof/ecdsa_secp256r1_sha256_test.json"),
+            include_str!(
+                "../tests/fixtures/crypto-regression/wycheproof/ecdsa_secp256r1_sha256_test.json"
+            ),
             "SHA-256",
             &OID_ECDSA_SHA256,
             484,
@@ -1127,7 +1129,9 @@ mod ecdsa_wycheproof_regression_tests {
     #[test]
     fn wycheproof_ecdsa_secp384r1_sha384_baseline() {
         run_wycheproof_file(
-            include_str!("../tests/fixtures/crypto-regression/wycheproof/ecdsa_secp384r1_sha384_test.json"),
+            include_str!(
+                "../tests/fixtures/crypto-regression/wycheproof/ecdsa_secp384r1_sha384_test.json"
+            ),
             "SHA-384",
             &OID_ECDSA_SHA384,
             504,
