@@ -77,8 +77,6 @@ anyhow = "1"
 # Observability
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "fmt"] }
-
-# Metrics (Prometheus)
 metrics = "0.24"
 metrics-exporter-prometheus = { version = "0.16", default-features = false }
 
@@ -131,6 +129,19 @@ path = "conformance/canonical/canonical_001.rs"
 name = "canonical_003"
 path = "conformance/canonical/canonical_003.rs"
 
+
+# Stage C JCS adapter shim — isolated example target, not a production binary.
+# Uses the existing pinned dev-dependency serde_json_canonicalizer = "=0.3.2".
+[[example]]
+name = "stage_c_jcs_probe"
+path = "conformance/stage_c_jcs_probe.rs"
+
+# Stage C C5 Merkle conformance test — ignored by default; explicitly enabled
+# only by the read-only Stage C C5 workflow with a pinned external corpus.
+[[test]]
+name = "stage_c_merkle_c5"
+path = "conformance/stage_c_merkle_c5.rs"
+
 [lints.rust]
 unsafe_code = "forbid"
 missing_docs = "warn"
@@ -141,3 +152,8 @@ all = { level = "deny", priority = -1 }
 unwrap_used = "warn"
 expect_used = "warn"
 panic = "warn"
+
+# Stage C C6 strict BC-02.1 JSON wire consumer experiment (not release gate).
+[[test]]
+name = "strict_wire_c6"
+path = "conformance/strict_wire_c6.rs"

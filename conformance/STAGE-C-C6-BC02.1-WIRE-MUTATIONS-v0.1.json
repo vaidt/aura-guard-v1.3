@@ -1,0 +1,132 @@
+{
+  "schema": "AURA-STAGE-C6-BC02.1-WIRE-MUTATION-CORPUS/0.1",
+  "contract": "BC-02.1-COMMON-RECEIPT",
+  "raw_octets_hex": "433600feff",
+  "raw_octets_base64": "QzYA/v8=",
+  "valid_receipt_json": "{\"adapter\":{\"adapter_id\":\"adapter\",\"adapter_version\":\"1\"},\"environment\":{\"environment_id\":\"env\",\"platform\":\"linux\",\"runtime\":\"python\"},\"fixture\":{\"fixture_artifact_identity\":\"fixture.bin\",\"fixture_id\":\"FIX-C6\"},\"handoff\":{\"method\":\"local\",\"status\":\"TRANSFERRED\"},\"received\":{\"octet_length\":5,\"raw_octets\":\"QzYA/v8=\",\"recomputed_sha256\":\"b1ef1ec3612e2eae6547f4d8ce748bff3fdbc71ecd8dbb7981234944bab01554\"},\"receiver\":{\"implementation_id\":\"impl\",\"implementation_version\":\"1\",\"language\":\"Python\",\"receiver_id\":\"RI-PY\",\"source_commit\":\"abc\"},\"schema_id\":\"BC-02.1-COMMON-RECEIPT\",\"schema_version\":1}",
+  "mutations": [
+    {
+      "id": "M001_DUPLICATE_TOP_KEY",
+      "kind": "replace",
+      "find": "\"schema_id\":\"BC-02.1-COMMON-RECEIPT\"",
+      "replace": "\"schema_id\":\"BAD\",\"schema_id\":\"BC-02.1-COMMON-RECEIPT\"",
+      "expected": "REJECT"
+    },
+    {
+      "id": "M002_DUPLICATE_NESTED_KEY",
+      "kind": "replace",
+      "find": "\"method\":\"local\"",
+      "replace": "\"method\":\"local\",\"method\":\"other\"",
+      "expected": "REJECT"
+    },
+    {
+      "id": "M003_AUTHORITY_FIELD",
+      "kind": "replace",
+      "find": "{\"adapter\":",
+      "replace": "{\"conformance_result\":\"PASS\",\"adapter\":",
+      "expected": "REJECT"
+    },
+    {
+      "id": "M004_UNKNOWN_NESTED_FIELD",
+      "kind": "replace",
+      "find": "\"adapter_id\":\"adapter\"",
+      "replace": "\"unknown\":\"x\",\"adapter_id\":\"adapter\"",
+      "expected": "REJECT"
+    },
+    {
+      "id": "M005_NULL_PROHIBITED",
+      "kind": "replace",
+      "find": "\"runtime\":\"python\"",
+      "replace": "\"runtime\":null",
+      "expected": "REJECT"
+    },
+    {
+      "id": "M006_UNKNOWN_HANDOFF_STATUS",
+      "kind": "replace",
+      "find": "\"status\":\"TRANSFERRED\"",
+      "replace": "\"status\":\"PASS\"",
+      "expected": "REJECT"
+    },
+    {
+      "id": "M007_BOOLEAN_LENGTH",
+      "kind": "replace",
+      "find": "\"octet_length\":5",
+      "replace": "\"octet_length\":true",
+      "expected": "REJECT"
+    },
+    {
+      "id": "M008_FLOAT_LENGTH",
+      "kind": "replace",
+      "find": "\"octet_length\":5",
+      "replace": "\"octet_length\":5.0",
+      "expected": "REJECT"
+    },
+    {
+      "id": "M009_LENGTH_MISMATCH",
+      "kind": "replace",
+      "find": "\"octet_length\":5",
+      "replace": "\"octet_length\":4",
+      "expected": "REJECT"
+    },
+    {
+      "id": "M010_DIGEST_MISMATCH",
+      "kind": "replace",
+      "find": "\"recomputed_sha256\":\"b1ef1ec3612e2eae6547f4d8ce748bff3fdbc71ecd8dbb7981234944bab01554\"",
+      "replace": "\"recomputed_sha256\":\"0000000000000000000000000000000000000000000000000000000000000000\"",
+      "expected": "REJECT"
+    },
+    {
+      "id": "M011_INVALID_BASE64",
+      "kind": "replace",
+      "find": "\"raw_octets\":\"QzYA/v8=\"",
+      "replace": "\"raw_octets\":\"%%%\"",
+      "expected": "REJECT"
+    },
+    {
+      "id": "M012_NONCANONICAL_BASE64",
+      "kind": "replace",
+      "find": "\"raw_octets\":\"QzYA/v8=\"",
+      "replace": "\"raw_octets\":\"QzYA/v8\"",
+      "expected": "REJECT"
+    },
+    {
+      "id": "M013_MISSING_NESTED_FIELD",
+      "kind": "replace",
+      "find": ",\"runtime\":\"python\"",
+      "replace": "",
+      "expected": "REJECT"
+    },
+    {
+      "id": "M014_MISSING_TOP_LEVEL_FIELD",
+      "kind": "replace",
+      "find": ",\"schema_version\":1",
+      "replace": "",
+      "expected": "REJECT"
+    },
+    {
+      "id": "M015_WRONG_SCHEMA_VERSION",
+      "kind": "replace",
+      "find": "\"schema_version\":1",
+      "replace": "\"schema_version\":true",
+      "expected": "REJECT"
+    },
+    {
+      "id": "M016_INVALID_JSON_ENVELOPE",
+      "kind": "literal",
+      "wire": "{",
+      "expected": "REJECT"
+    },
+    {
+      "id": "M017_NON_UTF8_JSON_ENVELOPE",
+      "kind": "hex",
+      "wire_hex": "fffe",
+      "expected": "REJECT"
+    },
+    {
+      "id": "M018_TOP_LEVEL_ARRAY",
+      "kind": "literal",
+      "wire": "[]",
+      "expected": "REJECT"
+    }
+  ]
+}
